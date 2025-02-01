@@ -1,5 +1,5 @@
 use oxc::allocator::CloneIn;
-use oxc::ast::ast::{Argument, BindingPatternKind, Expression, Statement};
+use oxc::ast::ast::{BindingPatternKind, Expression, Function, Statement};
 use oxc::ast::visit::walk_mut::walk_statement;
 use oxc::ast::{
     AstBuilder, VisitMut,
@@ -33,6 +33,20 @@ impl<'a> Renamer<'a> {
             .collect();
         format!("_{}", random_part)
     }
+
+    fn rename_function(&mut self, function: &mut oxc::allocator::Box<'a, Function<'a>>) {
+        if let Some(identifier) = function.name() {
+            let random_name = self.generate_random_name();
+            let name = self
+                .function_map
+                .entry(identifier.into_string())
+                .or_insert(random_name);
+            let ident = self
+                .ast_builder
+                .binding_identifier(function.id.as_ref().unwrap().span, name.as_str());
+            function.id = Some(ident);
+        }
+    }
 }
 
 impl<'a> VisitMut<'a> for Renamer<'a> {
@@ -51,31 +65,7 @@ impl<'a> VisitMut<'a> for Renamer<'a> {
 
     fn visit_statement(&mut self, stmt: &mut Statement<'a>) {
         if let Statement::FunctionDeclaration(function) = stmt {
-            if let Some(identifier) = function.name() {
-                let random_name = self.generate_random_name();
-                let name = self
-                    .function_map
-                    .entry(identifier.into_string())
-                    .or_insert(random_name);
-                let ident = self
-                    .ast_builder
-                    .binding_identifier(function.id.as_ref().unwrap().span, name.as_str());
-                *function = self.ast_builder.alloc_function(
-                    function.span,
-                    function.r#type,
-                    Some(ident),
-                    function.generator,
-                    function.r#async,
-                    function.declare,
-                    function
-                        .type_parameters
-                        .clone_in(&self.ast_builder.allocator),
-                    function.this_param.clone_in(&self.ast_builder.allocator),
-                    function.params.clone_in(&self.ast_builder.allocator),
-                    function.return_type.clone_in(&self.ast_builder.allocator),
-                    function.body.clone_in(&self.ast_builder.allocator),
-                )
-            }
+            self.rename_function(function);
         }
 
         walk_statement(self, stmt);
@@ -83,33 +73,7 @@ impl<'a> VisitMut<'a> for Renamer<'a> {
 
     fn visit_expression(&mut self, expr: &mut Expression<'a>) {
         match expr {
-            Expression::FunctionExpression(function) => {
-                if let Some(identifier) = function.name() {
-                    let random_name = self.generate_random_name();
-                    let name = self
-                        .function_map
-                        .entry(identifier.into_string())
-                        .or_insert(random_name);
-                    let ident = self
-                        .ast_builder
-                        .binding_identifier(function.id.as_ref().unwrap().span, name.as_str());
-                    *function = self.ast_builder.alloc_function(
-                        function.span,
-                        function.r#type,
-                        Some(ident),
-                        function.generator,
-                        function.r#async,
-                        function.declare,
-                        function
-                            .type_parameters
-                            .clone_in(&self.ast_builder.allocator),
-                        function.this_param.clone_in(&self.ast_builder.allocator),
-                        function.params.clone_in(&self.ast_builder.allocator),
-                        function.return_type.clone_in(&self.ast_builder.allocator),
-                        function.body.clone_in(&self.ast_builder.allocator),
-                    );
-                }
-            }
+            Expression::FunctionExpression(function) => self.rename_function(function),
             Expression::Identifier(ident_ref) => {
                 if let Some(name) = self.variable_map.get(ident_ref.name.as_str()) {
                     *ident_ref = self
