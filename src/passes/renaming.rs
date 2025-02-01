@@ -1,7 +1,5 @@
 use oxc::allocator::CloneIn;
-use oxc::ast::ast::{
-    Argument, BindingPatternKind, Expression, Function, Statement, TSTypeParameterInstantiation,
-};
+use oxc::ast::ast::{BindingPatternKind, Expression, Statement};
 use oxc::ast::visit::walk_mut::walk_statement;
 use oxc::ast::{
     AstBuilder, VisitMut,

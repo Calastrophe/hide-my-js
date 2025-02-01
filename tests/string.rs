@@ -1,4 +1,3 @@
-use hide_my_js::passes::renaming::VariableRenamer;
 use hide_my_js::passes::string::StringEncoder;
 use oxc::ast::AstBuilder;
 use oxc::ast::VisitMut;
