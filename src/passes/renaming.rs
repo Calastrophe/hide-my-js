@@ -1,4 +1,8 @@
-use oxc::ast::ast::{BindingIdentifier, BindingPatternKind, Expression, IdentifierReference};
+use oxc::allocator::CloneIn;
+use oxc::ast::ast::{
+    Argument, BindingPatternKind, Expression, Function, Statement, TSTypeParameterInstantiation,
+};
+use oxc::ast::visit::walk_mut::walk_statement;
 use oxc::ast::{
     AstBuilder, VisitMut,
     visit::walk_mut::{walk_binding_pattern_kind, walk_expression},
@@ -6,16 +10,18 @@ use oxc::ast::{
 use rand::Rng;
 use rand::distr::Alphanumeric;
 
-pub struct VariableRenamer<'a> {
+pub struct Renamer<'a> {
     ast_builder: &'a AstBuilder<'a>,
     variable_map: std::collections::HashMap<String, String>,
+    function_map: std::collections::HashMap<String, String>,
 }
 
-impl<'a> VariableRenamer<'a> {
+impl<'a> Renamer<'a> {
     pub fn new(ast_builder: &'a AstBuilder<'a>) -> Self {
         Self {
             ast_builder,
             variable_map: std::collections::HashMap::new(),
+            function_map: std::collections::HashMap::new(),
         }
     }
 
@@ -31,7 +37,7 @@ impl<'a> VariableRenamer<'a> {
     }
 }
 
-impl<'a> VisitMut<'a> for VariableRenamer<'a> {
+impl<'a> VisitMut<'a> for Renamer<'a> {
     fn visit_binding_pattern_kind(&mut self, pattern: &mut BindingPatternKind<'a>) {
         if let BindingPatternKind::BindingIdentifier(identifier) = pattern {
             let name = self.generate_random_name();
@@ -45,13 +51,75 @@ impl<'a> VisitMut<'a> for VariableRenamer<'a> {
         walk_binding_pattern_kind(self, pattern);
     }
 
-    fn visit_expression(&mut self, expr: &mut Expression<'a>) {
-        if let Expression::Identifier(ident_ref) = expr {
-            if let Some(name) = self.variable_map.get(ident_ref.name.as_str()) {
-                *ident_ref = self
+    fn visit_statement(&mut self, stmt: &mut Statement<'a>) {
+        if let Statement::FunctionDeclaration(function) = stmt {
+            if let Some(identifier) = function.name() {
+                let random_name = self.generate_random_name();
+                let name = self
+                    .function_map
+                    .entry(identifier.into_string())
+                    .or_insert(random_name);
+                let ident = self
                     .ast_builder
-                    .alloc_identifier_reference(ident_ref.span, name)
+                    .binding_identifier(function.id.as_ref().unwrap().span, name.as_str());
+                *function = self.ast_builder.alloc_function(
+                    function.span,
+                    function.r#type,
+                    Some(ident),
+                    function.generator,
+                    function.r#async,
+                    function.declare,
+                    function
+                        .type_parameters
+                        .clone_in(&self.ast_builder.allocator),
+                    function.this_param.clone_in(&self.ast_builder.allocator),
+                    function.params.clone_in(&self.ast_builder.allocator),
+                    function.return_type.clone_in(&self.ast_builder.allocator),
+                    function.body.clone_in(&self.ast_builder.allocator),
+                )
             }
+        }
+
+        walk_statement(self, stmt);
+    }
+
+    fn visit_expression(&mut self, expr: &mut Expression<'a>) {
+        match expr {
+            Expression::FunctionExpression(function) => {
+                if let Some(identifier) = function.name() {
+                    let random_name = self.generate_random_name();
+                    let name = self
+                        .function_map
+                        .entry(identifier.into_string())
+                        .or_insert(random_name);
+                    let ident = self
+                        .ast_builder
+                        .binding_identifier(function.id.as_ref().unwrap().span, name.as_str());
+                    *function = self.ast_builder.alloc_function(
+                        function.span,
+                        function.r#type,
+                        Some(ident),
+                        function.generator,
+                        function.r#async,
+                        function.declare,
+                        function
+                            .type_parameters
+                            .clone_in(&self.ast_builder.allocator),
+                        function.this_param.clone_in(&self.ast_builder.allocator),
+                        function.params.clone_in(&self.ast_builder.allocator),
+                        function.return_type.clone_in(&self.ast_builder.allocator),
+                        function.body.clone_in(&self.ast_builder.allocator),
+                    )
+                }
+            }
+            Expression::Identifier(ident_ref) => {
+                if let Some(name) = self.variable_map.get(ident_ref.name.as_str()) {
+                    *ident_ref = self
+                        .ast_builder
+                        .alloc_identifier_reference(ident_ref.span, name);
+                }
+            }
+            _ => {}
         }
 
         walk_expression(self, expr);

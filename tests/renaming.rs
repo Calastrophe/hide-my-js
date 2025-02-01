@@ -1,4 +1,4 @@
-use hide_my_js::passes::renaming::VariableRenamer;
+use hide_my_js::passes::renaming::Renamer;
 use oxc::ast::AstBuilder;
 use oxc::ast::VisitMut;
 use oxc::codegen::Codegen;
@@ -14,6 +14,12 @@ fn variable_renaming() {
             let result = a + b;
             return result;
         }
+
+        function sub(a, b) {
+            let result = add(a, b) - b;
+            return result;
+        }
+
         console.log(add(1, 2));
     "#;
 
@@ -36,7 +42,7 @@ fn variable_renaming() {
 
     let ast_builder = AstBuilder::new(&allocator);
 
-    let mut transformer = VariableRenamer::new(&ast_builder);
+    let mut transformer = Renamer::new(&ast_builder);
     transformer.visit_program(&mut program);
 
     let obfuscated_code = Codegen::new().build(&program);
