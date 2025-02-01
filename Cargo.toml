@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 oxc = { version = "0.48.1", features = ["full"] }
 rand = "0.9.0"
+base64 = "0.22.1"
