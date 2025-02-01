@@ -1,7 +1,7 @@
 [package]
 name = "hide-my-js"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 oxc = { version = "0.48.1", features = ["full"] }
