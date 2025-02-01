@@ -1,5 +1,8 @@
-use oxc::ast::ast::{BindingIdentifier, IdentifierReference};
-use oxc::ast::{AstBuilder, VisitMut};
+use oxc::ast::ast::{BindingIdentifier, BindingPatternKind, Expression, IdentifierReference};
+use oxc::ast::{
+    AstBuilder, VisitMut,
+    visit::walk_mut::{walk_binding_pattern_kind, walk_expression},
+};
 use rand::Rng;
 use rand::distr::Alphanumeric;
 
@@ -29,13 +32,29 @@ impl<'a> VariableRenamer<'a> {
 }
 
 impl<'a> VisitMut<'a> for VariableRenamer<'a> {
-    fn visit_binding_identifier(&mut self, it: &mut BindingIdentifier<'a>) {
-        // replace the identifier
+    fn visit_binding_pattern_kind(&mut self, pattern: &mut BindingPatternKind<'a>) {
+        if let BindingPatternKind::BindingIdentifier(identifier) = pattern {
+            let name = self.generate_random_name();
+            self.variable_map
+                .insert(identifier.name.into_string(), name.clone());
+            *identifier = self
+                .ast_builder
+                .alloc_binding_identifier(identifier.span, name);
+        }
+
+        walk_binding_pattern_kind(self, pattern);
     }
 
-    fn visit_identifier_reference(&mut self, it: &mut IdentifierReference<'a>) {
-        // replace the identifier reference
-    }
+    fn visit_expression(&mut self, expr: &mut Expression<'a>) {
+        if let Expression::Identifier(ident_ref) = expr {
+            if let Some(name) = self.variable_map.get(ident_ref.name.as_str()) {
+                *ident_ref = self
+                    .ast_builder
+                    .alloc_identifier_reference(ident_ref.span, name)
+            }
+        }
 
+        walk_expression(self, expr);
+    }
     // TODO: fn visit_identifier_name ... determine if this is needed
 }
