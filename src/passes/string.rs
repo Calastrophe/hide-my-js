@@ -1,16 +1,20 @@
-use oxc::ast::ast::{Argument, BindingIdentifier, CallExpression, Expression, IdentifierReference, TSTypeParameterInstantiation};
+use std::collections::HashSet;
+
+use oxc::ast::ast::{Argument, Expression, TSTypeParameterInstantiation, VariableDeclarator};
 use oxc::ast::{AstBuilder, VisitMut};
-use oxc::span::{Atom, Span};
+use oxc::span::Atom;
 use base64::prelude::*;
 
 pub struct StringEncoder<'a> {
     ast_builder: &'a AstBuilder<'a>,
+    string_vars: HashSet<String>,
 }
 
 impl<'a> StringEncoder<'a> {
     pub fn new(ast_builder: &'a AstBuilder<'a>) -> Self {
         Self {
             ast_builder,
+            string_vars: HashSet::new(),
         }
     }
 
@@ -20,15 +24,25 @@ impl<'a> StringEncoder<'a> {
 }
 
 impl<'a> VisitMut<'a> for StringEncoder<'a> {
+    fn visit_variable_declarator(&mut self, it: &mut VariableDeclarator<'a>) {
+        if let Some(expression) = &mut it.init {
+            if let Expression::StringLiteral(string_literal) = expression {
+                let name = it.id.get_identifier().unwrap();
+
+                let allocated_str = self.ast_builder.allocator.alloc_str(&self.encode(&string_literal.value));
+                string_literal.value = Atom::from(&*allocated_str);
+
+                self.string_vars.insert(name.into_string());
+            }
+        }
+    }
+
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
         match it {
-            Expression::StringLiteral(string_literal) => {
-                let encoded = self.encode(*&string_literal.value.to_string().as_str());
-                let allocated = self.ast_builder.allocator.alloc_str(&encoded);
-                *string_literal = self.ast_builder.alloc_string_literal(string_literal.span, Atom::from(&*allocated), None);
-            },
             Expression::Identifier(identifier) =>{
-                *it = Expression::CallExpression(self.ast_builder.alloc_call_expression(identifier.span, Expression::Identifier(self.ast_builder.alloc_identifier_reference(identifier.span, "atob")), None::<oxc::allocator::Box<TSTypeParameterInstantiation>>, self.ast_builder.vec_from_array([Argument::Identifier(oxc::allocator::Box::new_in(identifier.to_owned(), &self.ast_builder.allocator))]), false));
+                if self.string_vars.contains(&identifier.name.to_string()) {
+                    *it = Expression::CallExpression(self.ast_builder.alloc_call_expression(identifier.span, Expression::Identifier(self.ast_builder.alloc_identifier_reference(identifier.span, "atob")), None::<oxc::allocator::Box<TSTypeParameterInstantiation>>, self.ast_builder.vec_from_array([Argument::Identifier(oxc::allocator::Box::new_in(identifier.to_owned(), &self.ast_builder.allocator))]), false));
+                }
             }
             _ => {}
         }
