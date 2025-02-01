@@ -1,5 +1,5 @@
 use oxc::allocator::CloneIn;
-use oxc::ast::ast::{BindingPatternKind, Expression, Statement};
+use oxc::ast::ast::{Argument, BindingPatternKind, Expression, Statement};
 use oxc::ast::visit::walk_mut::walk_statement;
 use oxc::ast::{
     AstBuilder, VisitMut,
@@ -107,11 +107,17 @@ impl<'a> VisitMut<'a> for Renamer<'a> {
                         function.params.clone_in(&self.ast_builder.allocator),
                         function.return_type.clone_in(&self.ast_builder.allocator),
                         function.body.clone_in(&self.ast_builder.allocator),
-                    )
+                    );
                 }
             }
             Expression::Identifier(ident_ref) => {
                 if let Some(name) = self.variable_map.get(ident_ref.name.as_str()) {
+                    *ident_ref = self
+                        .ast_builder
+                        .alloc_identifier_reference(ident_ref.span, name);
+                }
+
+                if let Some(name) = self.function_map.get(ident_ref.name.as_str()) {
                     *ident_ref = self
                         .ast_builder
                         .alloc_identifier_reference(ident_ref.span, name);
@@ -122,5 +128,4 @@ impl<'a> VisitMut<'a> for Renamer<'a> {
 
         walk_expression(self, expr);
     }
-    // TODO: fn visit_identifier_name ... determine if this is needed
 }
