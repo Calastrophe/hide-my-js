@@ -1,4 +1,4 @@
-mod dead_code;
-mod string;
-mod control_flow;
-mod renaming;
+pub mod control_flow;
+pub mod dead_code;
+pub mod renaming;
+pub mod string;

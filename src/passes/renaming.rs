@@ -3,13 +3,13 @@ use oxc::ast::{AstBuilder, VisitMut};
 use rand::Rng;
 use rand::distr::Alphanumeric;
 
-struct VariableRenamer<'a> {
+pub struct VariableRenamer<'a> {
     ast_builder: &'a AstBuilder<'a>,
     variable_map: std::collections::HashMap<String, String>,
 }
 
 impl<'a> VariableRenamer<'a> {
-    fn new(ast_builder: &'a AstBuilder<'a>) -> Self {
+    pub fn new(ast_builder: &'a AstBuilder<'a>) -> Self {
         Self {
             ast_builder,
             variable_map: std::collections::HashMap::new(),
