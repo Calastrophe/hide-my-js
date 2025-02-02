@@ -4,3 +4,5 @@ pub mod numeric;
 pub mod opaque_predicates;
 pub mod renaming;
 pub mod string;
+pub mod remove_comments;
+
