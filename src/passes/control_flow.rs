@@ -1,15 +1,26 @@
 use core::panic;
 
+<<<<<<< HEAD
 use oxc::allocator::{Box, CloneIn};
 use oxc::ast::ast::{AssignmentOperator, BlockStatement, BreakStatement, ExpressionStatement, ForStatementInit, FunctionBody, IdentifierReference, IfStatement, SwitchCase, TSTypeAnnotation, VariableDeclarationKind, WhileStatement};
 use oxc::ast::{AstBuilder, VisitMut};
 use oxc::ast::ast::Expression;
 use oxc::span::{Atom, Span};
 use rand::distr::Alphanumeric;
+=======
+use oxc::allocator::CloneIn;
+use oxc::ast::ast::BigintBase;
+use oxc::ast::ast::Expression;
+use oxc::ast::ast::Statement;
+use oxc::ast::ast::{
+    AssignmentOperator, BlockStatement, ExpressionStatement, FunctionBody, TSTypeAnnotation,
+    VariableDeclarationKind,
+};
+use oxc::ast::{AstBuilder, VisitMut};
+use oxc::span::Atom;
+>>>>>>> da6cf60f411ffc5501086265c93f5f7c34e17006
 use rand::seq::SliceRandom;
 use rand::Rng;
-use oxc::ast::ast::BigintBase;
-use oxc::ast::ast::Statement;
 
 use crate::utils;
 
@@ -40,9 +51,7 @@ pub struct ControlFlowFlattener<'a> {
 
 impl<'a> ControlFlowFlattener<'a> {
     pub fn new(ast_builder: &'a AstBuilder<'a>) -> Self {
-        Self {
-            ast_builder,
-        }
+        Self { ast_builder }
     }
 
     fn generate_random_name() -> String {
@@ -58,6 +67,7 @@ impl<'a> ControlFlowFlattener<'a> {
 
     fn generate_case_number(&self) -> i32 {
         let mut rng = rand::rng();
+<<<<<<< HEAD
         return rng.gen_range(-1000..=1000);//rng.gen_range(std::i32::MIN..=std::i32::MAX);
     }
 
@@ -514,6 +524,9 @@ impl<'a> ControlFlowFlattener<'a> {
         *while_loop = self.ast_builder.while_statement(while_loop.span, Expression::Identifier(new_cond_var_id), Statement::BlockStatement(block));
 
         pre_loop_statements
+=======
+        return rng.random_range(-1000..=1000);
+>>>>>>> da6cf60f411ffc5501086265c93f5f7c34e17006
     }
 
     fn flatten_func_body(&mut self, it: &mut FunctionBody<'a>) {
@@ -521,9 +534,27 @@ impl<'a> ControlFlowFlattener<'a> {
 
         let mut raw_case_num = self.generate_case_number();
 
+<<<<<<< HEAD
         let (state_var_declaration, state_identifier) = utils::create_var_i32(self.ast_builder, VariableDeclarationKind::Let, it.span, &Self::generate_random_name(), raw_case_num);
 
         let (inf_loop_cond, inf_loop_cond_id) = utils::create_var_i32(self.ast_builder, VariableDeclarationKind::Let, it.span, &Self::generate_random_name(), 1);
+=======
+        let (state_var_declaration, state_identifier) = utils::create_var_i32(
+            self.ast_builder,
+            VariableDeclarationKind::Let,
+            it.span,
+            "state",
+            raw_case_num,
+        );
+
+        let (inf_loop_cond, inf_loop_cond_id) = utils::create_var_i32(
+            self.ast_builder,
+            VariableDeclarationKind::Let,
+            it.span,
+            "loop_cond",
+            1,
+        );
+>>>>>>> da6cf60f411ffc5501086265c93f5f7c34e17006
 
         //let block_statement = self.ast_builder.alloc_block_statement(it.span, body);
         //let while_block = self.ast_builder.alloc_while_statement(it.span, Expression::BooleanLiteral(self.ast_builder.alloc_boolean_literal(it.span, true)), )
@@ -542,6 +573,7 @@ impl<'a> ControlFlowFlattener<'a> {
             match &mut moved_statement {
                 Statement::ReturnStatement(_) => {
                     is_ret = true;
+<<<<<<< HEAD
                 },
                 Statement::IfStatement(statement) => {
                     self.flatten_if_statement(statement, None);
@@ -580,6 +612,10 @@ impl<'a> ControlFlowFlattener<'a> {
                     let mut pre_statements = self.flatten_loop(while_stmnt);
                     case_block.append(&mut pre_statements);
                 },
+=======
+                }
+                Statement::WhileStatement(while_stmnt) => {}
+>>>>>>> da6cf60f411ffc5501086265c93f5f7c34e17006
                 Statement::FunctionDeclaration(func) => {
                     if let Some(fn_body) = &mut func.body {
                         self.flatten_func_body(fn_body);
@@ -588,13 +624,13 @@ impl<'a> ControlFlowFlattener<'a> {
                     body_statements.push(moved_statement);
                     stmnt_cnt += 1;
                     continue;
-                },
+                }
                 Statement::ClassDeclaration(_) | Statement::VariableDeclaration(_) => {
                     body_statements.push(moved_statement);
                     stmnt_cnt += 1;
                     continue;
-                },
-                _ => {},
+                }
+                _ => {}
             }
 
             case_block.push(moved_statement);
@@ -604,22 +640,61 @@ impl<'a> ControlFlowFlattener<'a> {
             raw_case_num = self.generate_case_number();
 
             if stmnt_cnt != total_stmnts - 1 {
-                let expression_statement = self.ast_builder.alloc_expression_statement(it.span, Expression::AssignmentExpression(utils::create_assignment_expression(self.ast_builder, it.span, state_identifier.name, AssignmentOperator::Assign, Expression::BigIntLiteral(utils::create_big_int_literal(self.ast_builder, it.span, raw_case_num, BigintBase::Decimal)))));
+                let expression_statement = self.ast_builder.alloc_expression_statement(
+                    it.span,
+                    Expression::AssignmentExpression(utils::create_assignment_expression(
+                        self.ast_builder,
+                        it.span,
+                        state_identifier.name,
+                        AssignmentOperator::Assign,
+                        Expression::BigIntLiteral(utils::create_big_int_literal(
+                            self.ast_builder,
+                            it.span,
+                            raw_case_num,
+                            BigintBase::Decimal,
+                        )),
+                    )),
+                );
                 case_block.push(Statement::ExpressionStatement(expression_statement));
             } else {
                 if !is_ret {
                     // add assignment statement for setting conditional to 0
-                    let expression_statement = self.ast_builder.alloc_expression_statement(it.span, Expression::AssignmentExpression(utils::create_assignment_expression(self.ast_builder, it.span, inf_loop_cond_id.name, AssignmentOperator::Assign, Expression::BigIntLiteral(utils::create_big_int_literal(self.ast_builder, it.span, 0, BigintBase::Decimal)))));
+                    let expression_statement = self.ast_builder.alloc_expression_statement(
+                        it.span,
+                        Expression::AssignmentExpression(utils::create_assignment_expression(
+                            self.ast_builder,
+                            it.span,
+                            inf_loop_cond_id.name,
+                            AssignmentOperator::Assign,
+                            Expression::BigIntLiteral(utils::create_big_int_literal(
+                                self.ast_builder,
+                                it.span,
+                                0,
+                                BigintBase::Decimal,
+                            )),
+                        )),
+                    );
                     case_block.push(Statement::ExpressionStatement(expression_statement));
                 }
             }
 
             // adding break statement
-            case_block.push(Statement::BreakStatement(self.ast_builder.alloc_break_statement(it.span, None)));
+            case_block.push(Statement::BreakStatement(
+                self.ast_builder.alloc_break_statement(it.span, None),
+            ));
 
             // appending case to switch statement
 
-            let case_statement = self.ast_builder.switch_case(it.span, Some(Expression::BigIntLiteral(utils::create_big_int_literal(self.ast_builder, it.span, cur_case_num, BigintBase::Decimal))), case_block);
+            let case_statement = self.ast_builder.switch_case(
+                it.span,
+                Some(Expression::BigIntLiteral(utils::create_big_int_literal(
+                    self.ast_builder,
+                    it.span,
+                    cur_case_num,
+                    BigintBase::Decimal,
+                ))),
+                case_block,
+            );
 
             switch_cases.push(case_statement);
 
@@ -629,17 +704,34 @@ impl<'a> ControlFlowFlattener<'a> {
         // shuffle cases to ranndomize order
         switch_cases.shuffle(&mut rand::rng());
 
-        let block_switch = self.ast_builder.alloc_switch_statement(it.span, Expression::Identifier(state_identifier),switch_cases);
+        let block_switch = self.ast_builder.alloc_switch_statement(
+            it.span,
+            Expression::Identifier(state_identifier),
+            switch_cases,
+        );
 
-        let while_loop = self.ast_builder.alloc_while_statement(it.span, Expression::Identifier(inf_loop_cond_id), Statement::SwitchStatement(block_switch));
+        let while_loop = self.ast_builder.alloc_while_statement(
+            it.span,
+            Expression::Identifier(inf_loop_cond_id),
+            Statement::SwitchStatement(block_switch),
+        );
 
         body_statements.push(Statement::VariableDeclaration(inf_loop_cond));
         body_statements.push(Statement::VariableDeclaration(state_var_declaration));
         body_statements.push(Statement::WhileStatement(while_loop));
         //let body_statements = self.ast_builder.vec_from_array([Statement::VariableDeclaration(state_var_declaration), Statement::WhileStatement(while_loop)]);
 
+<<<<<<< HEAD
         *it = self.ast_builder.function_body(it.span, self.ast_builder.move_vec(&mut it.directives), body_statements);
     }*/
+=======
+        *it = self.ast_builder.function_body(
+            it.span,
+            self.ast_builder.move_vec(&mut it.directives),
+            body_statements,
+        );
+    }
+>>>>>>> da6cf60f411ffc5501086265c93f5f7c34e17006
 }
 
 impl<'a> VisitMut<'a> for ControlFlowFlattener<'a> {

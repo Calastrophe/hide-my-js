@@ -24,7 +24,7 @@ impl<'a> StringEncoder<'a> {
 }
 
 impl<'a> VisitMut<'a> for StringEncoder<'a> {
-    fn visit_variable_declarator(&mut self, var: &mut VariableDeclarator<'a>) {
+     fn visit_variable_declarator(&mut self, var: &mut VariableDeclarator<'a>) {
         if let Some(expression) = &mut var.init {
             if let Expression::StringLiteral(string_literal) = expression {
                 if let Some(name) = var.id.kind.get_identifier() {
@@ -38,7 +38,7 @@ impl<'a> VisitMut<'a> for StringEncoder<'a> {
                 }
             }
         }
-    }
+    } 
 
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
         match it {

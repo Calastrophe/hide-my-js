@@ -1,24 +1,12 @@
+use crate::utils::generate_random_name;
 use oxc::ast::ast::{Atom, BindingIdentifier, IdentifierReference};
 use oxc::ast::visit::walk_mut::{walk_binding_identifier, walk_identifier_reference};
 use oxc::ast::{AstBuilder, VisitMut};
-use rand::distr::Alphanumeric;
-use rand::Rng;
 use std::collections::HashMap;
 
 pub struct Renamer<'a> {
     ast_builder: &'a AstBuilder<'a>,
     symbol_map: HashMap<&'a str, String>,
-}
-
-fn generate_random_name() -> String {
-    let mut rng = rand::rng();
-    let length = rng.random_range(8..15);
-    let random_part: String = rng
-        .sample_iter(&Alphanumeric)
-        .take(length)
-        .map(char::from)
-        .collect();
-    format!("_{}", random_part)
 }
 
 impl<'a> Renamer<'a> {

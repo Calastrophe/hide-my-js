@@ -11,10 +11,12 @@ use oxc::span::SourceType;
 fn numeric() {
     let code = r#"
         function test(a, b) {
-        79838993 ^ 79838992;
-    	382699621 ^ 382699623;
-    	791897253 ^ 791897254;
-    	32 / 8;
+            1
+            2
+            3
+            4
+            5
+            6
         }
     "#;
 
@@ -26,8 +28,6 @@ fn numeric() {
         ..
     } = Parser::new(&allocator, code, SourceType::cjs()).parse();
     errors.extend(parser_errors);
-
-    println!("{program:?}");
 
     let SemanticBuilderReturn {
         semantic: _,
