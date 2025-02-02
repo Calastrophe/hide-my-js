@@ -23,11 +23,19 @@ fn string() {
                 console.log("hello again");
             }
 
-            let loop_v = 5;
-
-            while (loop_v) {
-                console.log("loop it:", loop_v % 5);
-                loop_v -= 1;
+            let i = 0;
+            while (i < 5) {
+                if (i >= 2) {
+                    if (i == 3)
+                        break;
+                } else {
+                    if (1) {
+                        i++;
+                        continue;
+                    }
+                }
+                console.log("loop it:", i);
+                i++;
             }
 
             console.log("firstline");
