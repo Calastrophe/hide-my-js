@@ -1,4 +1,5 @@
 use hide_my_js::passes::dead_code::DeadCodeInserter;
+use hide_my_js::passes::renaming::Renamer;
 use oxc::ast::AstBuilder;
 use oxc::ast::VisitMut;
 use oxc::codegen::Codegen;
@@ -78,7 +79,9 @@ fn dead_code() {
     let ast_builder = AstBuilder::new(&allocator);
 
     let mut transformer = DeadCodeInserter::new(&ast_builder);
+    let mut renamer = Renamer::new(&ast_builder);
     transformer.visit_program(&mut program);
+    //renamer.visit_program(&mut program);
 
     let obfuscated_code = Codegen::new().build(&program);
 
