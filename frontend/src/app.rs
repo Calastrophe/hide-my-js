@@ -1,9 +1,7 @@
-
 use egui::{
     text::CCursorRange, Key, KeyboardShortcut, Modifiers, ScrollArea, TextBuffer, TextEdit, Ui,
 };
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
-
 
 pub struct ObfuscatorApp {
     code: String,
@@ -16,70 +14,94 @@ pub struct ObfuscatorApp {
     string: bool,
 }
 
-
-
-
 impl Default for ObfuscatorApp {
     fn default() -> Self {
         Self {
             code: r#"
-function hello_str() {
-    let str = "hello world";
-    return str;
+// Calculate the factorial
+function factorial(n) {
+    if (n === 0 || n === 1) return 1;
+    return n * factorial(n - 1);
 }
 
-function fn2() {
-    function hello() {
-        console.log("hello again");
-        console.log("hello again");
-        console.log("hello again");
-    }
-
-    let loop_v = 5;
-
-    while (loop_v) {
-        console.log("loop it:", loop_v % 5);
-        loop_v -= 1;
-    }
-
-    console.log("firstline");
-    console.log("secondline");
-    let num = 5;
-    console.log("thirdline", num);
-    hello();
+// Calculate fibonacci
+function fibonacci(n) {
+    if (n <= 1) return n;
+    return fibonacci(n - 1) + fibonacci(n - 2);
 }
-console.log(hello_str());
-fn2();
-                "#.to_owned(),
+
+// and so on...
+function sumArray(arr) {
+    return arr.reduce((acc, val) => acc + val, 0);
+}
+
+function productArray(arr) {
+    return arr.reduce((acc, val) => acc * val, 1);
+}
+
+function gcd(a, b) {
+    if (b === 0) return a;
+    return gcd(b, a % b);
+}
+
+function lcm(a, b) {
+    return (a * b) / gcd(a, b);
+}
+
+function power(base, exponent) {
+    if (exponent === 0) return 1;
+    return base * power(base, exponent - 1);
+}
+
+function returnString() {
+    let some_string = "random string";
+    return some_string;
+}
+                "#
+            .to_owned(),
             obfuscated_code: r#"
-function hello_str() {
-    let str = "hello world";
-    return str;
+// Calculate the factorial
+function factorial(n) {
+    if (n === 0 || n === 1) return 1;
+    return n * factorial(n - 1);
 }
 
-function fn2() {
-    function hello() {
-        console.log("hello again");
-        console.log("hello again");
-        console.log("hello again");
-    }
-
-    let loop_v = 5;
-
-    while (loop_v) {
-        console.log("loop it:", loop_v % 5);
-        loop_v -= 1;
-    }
-
-    console.log("firstline");
-    console.log("secondline");
-    let num = 5;
-    console.log("thirdline", num);
-    hello();
+// Calculate fibonacci
+function fibonacci(n) {
+    if (n <= 1) return n;
+    return fibonacci(n - 1) + fibonacci(n - 2);
 }
-console.log(hello_str());
-fn2();
-                "#.to_owned(),
+
+// and so on...
+function sumArray(arr) {
+    return arr.reduce((acc, val) => acc + val, 0);
+}
+
+function productArray(arr) {
+    return arr.reduce((acc, val) => acc * val, 1);
+}
+
+function gcd(a, b) {
+    if (b === 0) return a;
+    return gcd(b, a % b);
+}
+
+function lcm(a, b) {
+    return (a * b) / gcd(a, b);
+}
+
+function power(base, exponent) {
+    if (exponent === 0) return 1;
+    return base * power(base, exponent - 1);
+}
+
+function returnString() {
+    let some_string = "random string";
+    return some_string;
+}
+
+                "#
+            .to_owned(),
 
             control_flow: false,
             dead_code: false,
@@ -87,7 +109,6 @@ fn2();
             remove_comments: false,
             renaming: false,
             string: false,
-
         }
     }
 }
@@ -95,9 +116,8 @@ fn2();
 impl eframe::App for ObfuscatorApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.panels(ctx);
-    } 
+    }
 }
-
 
 impl ObfuscatorApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -116,35 +136,22 @@ impl ObfuscatorApp {
                 ui.checkbox(&mut self.remove_comments, "Comment Remover");
                 ui.checkbox(&mut self.renaming, "Renamer");
                 ui.checkbox(&mut self.string, "String Encoding");
-                if ui.button("Obfuscate!").clicked() { 
+                if ui.button("Obfuscate!").clicked() {
                     self.obfuscate_code();
                 }
             });
-
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.ui(ui, ctx);
-
-        });
-
-        egui::TopBottomPanel::bottom("Bottom Panel").show(ctx, |ui| { 
-            ui.columns(1, |cols| { 
-                cols[0].vertical_centered(|ui| { 
-                    ui.add(egui::github_link_file!(
-                        "https://github.com/Calastrophe/hide-my-js",
-                        "Source code."
-                    ));
-                });
-            });
         });
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.columns(2, |columns| { 
+        ui.columns(2, |columns| {
             let width = ctx.input(|i: &egui::InputState| i.screen_rect()).width();
-            columns[1].set_max_width(width/5.0); //set width to 1/5th of windows size
-            // i have no idea why this doesnt work
+            columns[1].set_max_width(width / 5.0); //set width to 1/5th of windows size
+                                                   // i have no idea why this doesnt work
             ScrollArea::vertical()
                 .id_salt("source")
                 .show(&mut columns[0], |ui| self.editor_ui(ui));
@@ -165,7 +172,6 @@ impl ObfuscatorApp {
             .with_numlines(false)
             .stick_to_bottom(true)
             .show(ui, &mut self.code);
-
     }
 
     fn obfuscated_code_view(&mut self, ui: &mut egui::Ui) {
@@ -178,10 +184,9 @@ impl ObfuscatorApp {
             .with_numlines(false)
             .stick_to_bottom(true)
             .show(ui, &mut self.obfuscated_code);
-
     }
-    // possibly move this function into the obfuscator codebase out of the frontend so that oxc is not required as as dep 
-    fn obfuscate_code(&mut self) { 
+    // possibly move this function into the obfuscator codebase out of the frontend so that oxc is not required as as dep
+    fn obfuscate_code(&mut self) {
         self.obfuscated_code = hide_my_js::obfuscate_code(
             self.code.clone(),
             self.control_flow,
