@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 
+use hide_my_js::passes::remove_comments::RemoveComments;
 use hide_my_js::passes::renaming::Renamer;
 use oxc::ast::AstBuilder;
 use oxc::ast::VisitMut;
@@ -37,6 +38,11 @@ fn test_all_passes() {
 
     let mut transformer = Renamer::new(&ast_builder);
     transformer.visit_program(&mut program);
+
+    let mut transformer = RemoveComments::new(&ast_builder);
+    transformer.visit_program(&mut program); 
+    
+
 
     let obfuscated_code = Codegen::new().build(&program);
 
