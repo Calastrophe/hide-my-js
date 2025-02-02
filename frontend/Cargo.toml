@@ -1,0 +1,29 @@
+[package]
+name = "frontend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hide-my-js = { path = "../" }
+egui = "0.30"
+eframe = { version = "0.30", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "x11",
+] }
+log = "0.4"
+
+# native:
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = "0.11"
+
+# web:
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3.70"
+
+[profile.release]
+opt-level = 2
+
+[profile.dev.package."*"]
+opt-level = 2
