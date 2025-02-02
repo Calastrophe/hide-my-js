@@ -12,6 +12,8 @@ eframe = { version = "0.30", default-features = false, features = [
     "x11",
 ] }
 log = "0.4"
+egui_extras = "0.30.0"
+egui_code_editor = "0.2.11"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

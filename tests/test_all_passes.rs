@@ -50,8 +50,6 @@ fn test_all_passes() {
     let mut numeric_obfuscation = NumericObfuscation::new(&ast_builder);
     numeric_obfuscation.visit_program(&mut program);
 
-    //todo; add opaque_predicates
-    
     let mut remove_comments = RemoveComments::new(&ast_builder);
     remove_comments.visit_program(&mut program); 
 

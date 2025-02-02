@@ -1,93 +1,195 @@
-pub struct TemplateApp {
-    label: String,
 
-    value: f32,
+use egui::{
+    text::CCursorRange, Key, KeyboardShortcut, Modifiers, ScrollArea, TextBuffer, TextEdit, Ui,
+};
+use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
+
+
+pub struct ObfuscatorApp {
+    code: String,
+    obfuscated_code: String,
+    control_flow: bool,
+    dead_code: bool,
+    numeric: bool,
+    remove_comments: bool,
+    renaming: bool,
+    string: bool,
 }
 
-impl Default for TemplateApp {
+
+
+
+impl Default for ObfuscatorApp {
     fn default() -> Self {
         Self {
-            // Example stuff:
-            label: "Hello World!".to_owned(),
-            value: 2.7,
+            code: r#"
+function hello_str() {
+    let str = "hello world";
+    return str;
+}
+
+function fn2() {
+    function hello() {
+        console.log("hello again");
+        console.log("hello again");
+        console.log("hello again");
+    }
+
+    let loop_v = 5;
+
+    while (loop_v) {
+        console.log("loop it:", loop_v % 5);
+        loop_v -= 1;
+    }
+
+    console.log("firstline");
+    console.log("secondline");
+    let num = 5;
+    console.log("thirdline", num);
+    hello();
+}
+console.log(hello_str());
+fn2();
+                "#.to_owned(),
+            obfuscated_code: r#"
+function hello_str() {
+    let str = "hello world";
+    return str;
+}
+
+function fn2() {
+    function hello() {
+        console.log("hello again");
+        console.log("hello again");
+        console.log("hello again");
+    }
+
+    let loop_v = 5;
+
+    while (loop_v) {
+        console.log("loop it:", loop_v % 5);
+        loop_v -= 1;
+    }
+
+    console.log("firstline");
+    console.log("secondline");
+    let num = 5;
+    console.log("thirdline", num);
+    hello();
+}
+console.log(hello_str());
+fn2();
+                "#.to_owned(),
+
+            control_flow: false,
+            dead_code: false,
+            numeric: false,
+            remove_comments: false,
+            renaming: false,
+            string: false,
+
         }
     }
 }
 
-impl TemplateApp {
-    /// Called once before the first frame.
+impl eframe::App for ObfuscatorApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.panels(ctx);
+    } 
+}
+
+
+impl ObfuscatorApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
         Default::default()
     }
-}
 
-impl eframe::App for TemplateApp {
-    /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
-
+    fn panels(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
-
-            egui::menu::bar(ui, |ui| {
-                // NOTE: no File->Quit on web pages!
-                let is_web = cfg!(target_arch = "wasm32");
-                if !is_web {
-                    ui.menu_button("File", |ui| {
-                        if ui.button("Quit").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    });
-                    ui.add_space(16.0);
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.control_flow, "Control Flow Obfuscation");
+                ui.checkbox(&mut self.dead_code, "Dead Code Injection");
+                ui.checkbox(&mut self.numeric, "Numeric Obfuscation");
+                ui.checkbox(&mut self.remove_comments, "Comment Remover");
+                ui.checkbox(&mut self.renaming, "Renamer");
+                ui.checkbox(&mut self.string, "String Encoding");
+                if ui.button("Obfuscate!").clicked() { 
+                    self.obfuscate_code();
                 }
-
-                egui::widgets::global_theme_preference_buttons(ui);
             });
+
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("eframe template");
+            self.ui(ui, ctx);
 
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(&mut self.label);
-            });
+        });
 
-            ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                self.value += 1.0;
-            }
-
-            ui.separator();
-
-            ui.add(egui::github_link_file!(
-                "https://github.com/emilk/eframe_template/blob/main/",
-                "Source code."
-            ));
-
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                powered_by_egui_and_eframe(ui);
-                egui::warn_if_debug_build(ui);
+        egui::TopBottomPanel::bottom("Bottom Panel").show(ctx, |ui| { 
+            ui.columns(1, |cols| { 
+                cols[0].vertical_centered(|ui| { 
+                    ui.add(egui::github_link_file!(
+                        "https://github.com/Calastrophe/hide-my-js",
+                        "Source code."
+                    ));
+                });
             });
         });
     }
-}
 
-fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label("Powered by ");
-        ui.hyperlink_to("egui", "https://github.com/emilk/egui");
-        ui.label(" and ");
-        ui.hyperlink_to(
-            "eframe",
-            "https://github.com/emilk/egui/tree/master/crates/eframe",
-        );
-        ui.label(".");
-    });
+    fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.columns(2, |columns| { 
+            let width = ctx.input(|i: &egui::InputState| i.screen_rect()).width();
+            columns[1].set_max_width(width/5.0); //set width to 1/5th of windows size
+            // i have no idea why this doesnt work
+            ScrollArea::vertical()
+                .id_salt("source")
+                .show(&mut columns[0], |ui| self.editor_ui(ui));
+
+            ScrollArea::vertical()
+                .id_salt("obfs")
+                .show(&mut columns[1], |ui| self.obfuscated_code_view(ui));
+        })
+    }
+
+    fn editor_ui(&mut self, ui: &mut egui::Ui) {
+        CodeEditor::default()
+            .id_source("code editor")
+            .with_rows(12)
+            .with_fontsize(15.0)
+            .with_theme(ColorTheme::GRUVBOX)
+            .with_syntax(Syntax::rust())
+            .with_numlines(false)
+            .stick_to_bottom(true)
+            .show(ui, &mut self.code);
+
+    }
+
+    fn obfuscated_code_view(&mut self, ui: &mut egui::Ui) {
+        CodeEditor::default()
+            .id_source("obfs code")
+            .with_rows(12)
+            .with_fontsize(15.0)
+            .with_theme(ColorTheme::GRUVBOX)
+            .with_syntax(Syntax::rust())
+            .with_numlines(false)
+            .stick_to_bottom(true)
+            .show(ui, &mut self.obfuscated_code);
+
+    }
+    // possibly move this function into the obfuscator codebase out of the frontend so that oxc is not required as as dep 
+    fn obfuscate_code(&mut self) { 
+        self.obfuscated_code = hide_my_js::obfuscate_code(
+            self.code.clone(),
+            self.control_flow,
+            self.dead_code,
+            self.numeric,
+            self.remove_comments,
+            self.renaming,
+            self.string,
+        )
+    }
 }
