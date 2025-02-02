@@ -8,7 +8,7 @@ use oxc::semantic::SemanticBuilderReturn;
 use oxc::span::SourceType;
 
 #[test]
-fn variable_renaming() {
+fn renaming() {
     let code = r#"
         function factorial(n) {
             if (n === 0 || n === 1) return 1;

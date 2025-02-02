@@ -1,4 +1,6 @@
-use oxc::ast::ast::{BindingPatternKind, Expression, Function, Statement};
+use oxc::ast::ast::{
+    Atom, BindingPatternKind, Expression, Function, IdentifierReference, Statement,
+};
 use oxc::ast::visit::walk_mut::walk_statement;
 use oxc::ast::{
     visit::walk_mut::{walk_binding_pattern_kind, walk_expression},
@@ -71,16 +73,16 @@ impl<'a> VisitMut<'a> for Renamer<'a> {
     fn visit_expression(&mut self, expr: &mut Expression<'a>) {
         match expr {
             Expression::FunctionExpression(function) => self.rename_function(function),
-            Expression::Identifier(ident_ref) => {
-                if let Some(name) = self.symbol_map.get(ident_ref.name.as_str()) {
-                    *ident_ref = self
-                        .ast_builder
-                        .alloc_identifier_reference(ident_ref.span, name)
-                }
-            }
             _ => {}
         }
 
         walk_expression(self, expr);
+    }
+
+    fn visit_identifier_reference(&mut self, identifier: &mut IdentifierReference<'a>) {
+        if let Some(name) = self.symbol_map.get(identifier.name.as_str()) {
+            let name = self.ast_builder.allocator.alloc_str(name);
+            identifier.name = Atom::from(&*name);
+        }
     }
 }
