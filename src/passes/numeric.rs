@@ -20,7 +20,7 @@ impl<'a> NumericObfuscation<'a> {
     ) -> Expression<'a> {
         let mut rng = rand::rng();
         let value = literal.value;
-        let right_value = rng.random_range(100..=i32::MAX);
+        let right_value = rng.random_range(i32::MIN..=i32::MAX);
 
         let upper_bound = if value.fract() != 0.0 { 1 } else { 2 };
         let (left_value, operator) = match rng.random_range(0..=upper_bound) {
