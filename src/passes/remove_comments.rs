@@ -14,6 +14,7 @@ impl<'a> RemoveComments<'a> {
 impl<'a> VisitMut<'a> for RemoveComments<'a> { 
     fn visit_program(&mut self, program: &mut oxc::ast::ast::Program<'a>) {
         program.comments.clear();
+
     }
 }
 

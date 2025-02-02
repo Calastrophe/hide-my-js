@@ -70,7 +70,7 @@ fn test_all_passes() {
 
 
 
-    let mut file = File::create("test_output.temp").unwrap();
+    let mut file = File::create("test_output.temp.js").unwrap();
     file.write_all(obfuscated_code.code.as_bytes()).unwrap();
 
 
