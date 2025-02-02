@@ -13,7 +13,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "eframe template",
+        "hide-my-js",
         native_options,
         Box::new(|cc| Ok(Box::new(frontend::ObfuscatorApp::new(cc)))),
     )
