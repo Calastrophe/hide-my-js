@@ -1,6 +1,6 @@
 use oxc::ast::{AstBuilder, VisitMut};
 
-
+#[allow(dead_code)]
 pub struct RemoveComments<'a> {
     ast_builder: &'a AstBuilder<'a>,
 }
