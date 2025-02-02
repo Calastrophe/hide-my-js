@@ -1,8 +1,12 @@
 use std::fs::File;
 use std::io::Write;
 
+use hide_my_js::passes::control_flow::ControlFlowFlattener;
+use hide_my_js::passes::dead_code::DeadCodeInserter;
+use hide_my_js::passes::numeric::NumericObfuscation;
 use hide_my_js::passes::remove_comments::RemoveComments;
 use hide_my_js::passes::renaming::Renamer;
+use hide_my_js::passes::string::StringEncoder;
 use oxc::ast::AstBuilder;
 use oxc::ast::VisitMut;
 use oxc::codegen::Codegen;
@@ -36,12 +40,26 @@ fn test_all_passes() {
 
     let ast_builder = AstBuilder::new(&allocator);
 
-    let mut transformer = Renamer::new(&ast_builder);
-    transformer.visit_program(&mut program);
+        
+    let mut control_flow_flattener = ControlFlowFlattener::new(&ast_builder);
+    control_flow_flattener.visit_program(&mut program);
 
-    let mut transformer = RemoveComments::new(&ast_builder);
-    transformer.visit_program(&mut program); 
+    let mut dead_code_inserter = DeadCodeInserter::new(&ast_builder);
+    dead_code_inserter.visit_program(&mut program);
+
+    let mut numeric_obfuscation = NumericObfuscation::new(&ast_builder);
+    numeric_obfuscation.visit_program(&mut program);
+
+    //todo; add opaque_predicates
     
+    let mut remove_comments = RemoveComments::new(&ast_builder);
+    remove_comments.visit_program(&mut program); 
+
+    let mut renamer = Renamer::new(&ast_builder);
+    renamer.visit_program(&mut program);
+
+    let mut string_encoder = StringEncoder::new(&ast_builder);
+    string_encoder.visit_program(&mut program);
 
 
     let obfuscated_code = Codegen::new().build(&program);
