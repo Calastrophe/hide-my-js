@@ -57,6 +57,8 @@ function returnString() {
     let some_string = "random string";
     return some_string;
 }
+
+console.log(factorial(10));
                 "#
             .to_owned(),
             obfuscated_code: r#"
@@ -100,6 +102,7 @@ function returnString() {
     return some_string;
 }
 
+console.log(factorial(10));
                 "#
             .to_owned(),
 
