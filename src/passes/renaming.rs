@@ -1,11 +1,6 @@
-use oxc::ast::ast::{
-    Atom, BindingPatternKind, Expression, Function, IdentifierReference, Statement,
-};
-use oxc::ast::visit::walk_mut::walk_statement;
-use oxc::ast::{
-    visit::walk_mut::{walk_binding_pattern_kind, walk_expression},
-    AstBuilder, VisitMut,
-};
+use oxc::ast::ast::{Atom, BindingIdentifier, IdentifierReference};
+use oxc::ast::visit::walk_mut::{walk_binding_identifier, walk_identifier_reference};
+use oxc::ast::{AstBuilder, VisitMut};
 use rand::distr::Alphanumeric;
 use rand::Rng;
 use std::collections::HashMap;
@@ -33,50 +28,17 @@ impl<'a> Renamer<'a> {
             symbol_map: HashMap::new(),
         }
     }
-
-    fn rename_function(&mut self, function: &mut oxc::allocator::Box<'a, Function<'a>>) {
-        if let Some(identifier) = function.name() {
-            let name = self
-                .symbol_map
-                .entry(identifier.as_str())
-                .or_insert_with(|| generate_random_name());
-            let ident = self
-                .ast_builder
-                .binding_identifier(function.id.as_ref().unwrap().span, name.as_str());
-            function.id = Some(ident);
-        }
-    }
 }
 
 impl<'a> VisitMut<'a> for Renamer<'a> {
-    fn visit_binding_pattern_kind(&mut self, pattern: &mut BindingPatternKind<'a>) {
-        if let BindingPatternKind::BindingIdentifier(identifier) = pattern {
-            let name = generate_random_name();
-            self.symbol_map
-                .insert(identifier.name.as_str(), name.clone());
-            *identifier = self
-                .ast_builder
-                .alloc_binding_identifier(identifier.span, name);
-        }
+    fn visit_binding_identifier(&mut self, identifier: &mut BindingIdentifier<'a>) {
+        let random_name = generate_random_name();
+        let ident_name = self.ast_builder.allocator.alloc_str(&random_name);
+        self.symbol_map
+            .insert(identifier.name.as_str(), random_name);
+        identifier.name = Atom::from(&*ident_name);
 
-        walk_binding_pattern_kind(self, pattern);
-    }
-
-    fn visit_statement(&mut self, stmt: &mut Statement<'a>) {
-        if let Statement::FunctionDeclaration(function) = stmt {
-            self.rename_function(function);
-        }
-
-        walk_statement(self, stmt);
-    }
-
-    fn visit_expression(&mut self, expr: &mut Expression<'a>) {
-        match expr {
-            Expression::FunctionExpression(function) => self.rename_function(function),
-            _ => {}
-        }
-
-        walk_expression(self, expr);
+        walk_binding_identifier(self, identifier);
     }
 
     fn visit_identifier_reference(&mut self, identifier: &mut IdentifierReference<'a>) {
@@ -84,5 +46,7 @@ impl<'a> VisitMut<'a> for Renamer<'a> {
             let name = self.ast_builder.allocator.alloc_str(name);
             identifier.name = Atom::from(&*name);
         }
+
+        walk_identifier_reference(self, identifier);
     }
 }
