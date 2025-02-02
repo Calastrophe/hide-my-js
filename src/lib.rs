@@ -73,6 +73,7 @@ pub fn obfuscate_code(
         renamer.visit_program(&mut program);
     }
 
-    let obfuscated_code = Codegen::new().build(&program).code;
+    let mut obfuscated_code = Codegen::new().build(&program).code;
+    obfuscated_code = obfuscated_code.replace(r"\\", r"\");
     obfuscated_code
 }
