@@ -23,9 +23,9 @@ impl<'a> VisitMut<'a> for Renamer<'a> {
     fn visit_binding_identifier(&mut self, identifier: &mut BindingIdentifier<'a>) {
         let random_name = GENERATOR.with_borrow_mut(|generator| generator.generate());
 
-        identifier.name = self.ast_builder.atom(&random_name);
         self.symbol_map
-            .insert(identifier.name.as_str(), random_name);
+            .insert(identifier.name.as_str(), random_name.clone());
+        identifier.name = self.ast_builder.atom(&random_name);
 
         walk_binding_identifier(self, identifier);
     }

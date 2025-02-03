@@ -4,7 +4,6 @@ pub mod utils;
 use self::passes::control_flow::ControlFlowFlattener;
 use self::passes::dead_code::DeadCodeInserter;
 use self::passes::numeric::NumericObfuscation;
-use self::passes::remove_comments::RemoveComments;
 use self::passes::renaming::Renamer;
 use self::passes::string::StringEncoder;
 use oxc::ast::AstBuilder;
@@ -20,7 +19,6 @@ pub fn obfuscate_code(
     control_flow: bool,
     dead_code: bool,
     numeric: bool,
-    remove_comments: bool,
     renaming: bool,
     string: bool,
 ) -> String {
@@ -42,11 +40,6 @@ pub fn obfuscate_code(
     errors.extend(semantic_errors);
 
     let ast_builder = AstBuilder::new(&allocator);
-
-    if remove_comments {
-        let mut remove_comments = RemoveComments::new(&ast_builder);
-        remove_comments.visit_program(&mut program);
-    }
 
     if control_flow {
         let mut control_flow_flattener = ControlFlowFlattener::new(&ast_builder);

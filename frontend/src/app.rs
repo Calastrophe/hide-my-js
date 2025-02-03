@@ -9,7 +9,6 @@ pub struct ObfuscatorApp {
     control_flow: bool,
     dead_code: bool,
     numeric: bool,
-    remove_comments: bool,
     renaming: bool,
     string: bool,
 }
@@ -136,7 +135,6 @@ impl ObfuscatorApp {
                 ui.checkbox(&mut self.control_flow, "Control Flow Obfuscation");
                 ui.checkbox(&mut self.dead_code, "Dead Code Injection");
                 ui.checkbox(&mut self.numeric, "Numeric Obfuscation");
-                ui.checkbox(&mut self.remove_comments, "Comment Remover");
                 ui.checkbox(&mut self.renaming, "Renamer");
                 ui.checkbox(&mut self.string, "String Encoding");
                 if ui.button("Obfuscate!").clicked() {
@@ -195,7 +193,6 @@ impl ObfuscatorApp {
             self.control_flow,
             self.dead_code,
             self.numeric,
-            self.remove_comments,
             self.renaming,
             self.string,
         )
