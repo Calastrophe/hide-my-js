@@ -27,7 +27,6 @@ impl<'a> DeadCodeInserter<'a> {
         let mut control_variables = vec![];
         let guaranteed_control = rand::random_range(0..4);
         for i in 0..rand::random_range(4..=7) {
-            let var_name = utils::generate_random_name();
             let is_control = rand::random_bool(0.10) || i == guaranteed_control;
             let value = if i == guaranteed_control {
                 rng.random_range(i32::MIN..-15000)
@@ -38,7 +37,6 @@ impl<'a> DeadCodeInserter<'a> {
                 self.ast_builder,
                 VariableDeclarationKind::Let,
                 body.span,
-                &var_name,
                 value,
             );
             if !is_control {

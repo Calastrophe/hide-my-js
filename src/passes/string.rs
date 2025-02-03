@@ -1,6 +1,8 @@
 use oxc::ast::ast::StringLiteral;
 use oxc::ast::{AstBuilder, VisitMut};
 
+// NOTE: This pass requires post processing of the generated code. The issue lies in the fact that `oxc` incorrectly handles escaped sequences of bytes in a string.
+// TODO: Create a PR for `oxc` and fix the issue or decide on a different implementation to encode strings, the latter would be better long term.
 pub struct StringEncoder<'a> {
     ast_builder: &'a AstBuilder<'a>,
 }
