@@ -1,7 +1,0 @@
-{
-    "recommendations": [
-        "rust-lang.rust-analyzer",
-        "dustypomerleau.rust-syntax",
-        "vadimcn.vscode-lldb"
-    ]
-}
