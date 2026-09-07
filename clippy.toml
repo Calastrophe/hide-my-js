@@ -1,0 +1,39 @@
+# Strict Clippy behavior settings; lint levels live in Cargo.toml.
+
+# Review public APIs too; assess breaking suggestions before applying them.
+avoid-breaking-exported-api = false
+
+# Prefer a reasoned local exception over abstractions added just for a threshold.
+cognitive-complexity-threshold = 20
+too-many-arguments-threshold = 5
+too-many-lines-threshold = 80
+type-complexity-threshold = 180
+max-fn-params-bools = 1
+max-struct-bools = 2
+
+array-size-threshold = 8192
+enum-variant-size-threshold = 128
+future-size-threshold = 8192
+large-error-threshold = 96
+pass-by-value-size-limit = 128
+stack-size-threshold = 262144
+too-large-for-stack = 128
+trivial-copy-size-limit = 8
+
+check-private-items = true
+check-incompatible-msrv-in-tests = true
+
+# Tests may assert fixture invariants and print diagnostics.
+allow-dbg-in-tests = false
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = false
+allow-panic-in-tests = true
+allow-print-in-tests = true
+allow-unwrap-in-tests = true
+allow-expect-in-consts = true
+allow-unwrap-in-consts = true
+allow-large-stack-frames-in-tests = false
+
+accept-comment-above-attributes = false
+accept-comment-above-statement = false
+upper-case-acronyms-aggressive = true

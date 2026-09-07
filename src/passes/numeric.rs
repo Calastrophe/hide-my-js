@@ -1,76 +1,65 @@
-use oxc::ast::{
-    ast::{Expression, NumericLiteral},
-    visit::walk_mut::walk_expression,
-    AstBuilder, VisitMut,
+use oxc::{
+    ast::ast::{BinaryOperator, Expression, NumericLiteral, PropertyKey},
+    ast_visit::{walk_mut, VisitMut},
 };
 use rand::Rng;
 
-pub struct NumericObfuscation<'a> {
-    ast_builder: &'a AstBuilder<'a>,
+use super::{number, Context};
+
+/// Mask int32 literals with XOR, retaining other numbers exactly.
+pub(super) struct Numeric<'ctx, 'a> {
+    /// The run's random stream and arena.
+    context: &'ctx mut Context<'a>,
 }
 
-impl<'a> NumericObfuscation<'a> {
-    pub fn new(ast_builder: &'a AstBuilder<'a>) -> Self {
-        Self { ast_builder }
+impl<'ctx, 'a> Numeric<'ctx, 'a> {
+    /// Borrow the current transformation run.
+    pub(super) const fn new(context: &'ctx mut Context<'a>) -> Self {
+        Self { context }
     }
 
-    pub fn generate_equivalent_expression(
-        &self,
-        literal: &oxc::allocator::Box<'a, NumericLiteral>,
-    ) -> Expression<'a> {
-        let mut rng = rand::rng();
+    /// Return a mask only if int32 coercion preserves the exact JavaScript value.
+    fn mask(&mut self, literal: &NumericLiteral<'a>) -> Option<Expression<'a>> {
         let value = literal.value;
-        let right_value = rng.random_range(i32::MIN..=i32::MAX);
-
-        let upper_bound = if value.fract() != 0.0 { 1 } else { 2 };
-        let (left_value, operator) = match rng.random_range(0..=upper_bound) {
-            0 => (
-                value - right_value as f64,
-                oxc::ast::ast::BinaryOperator::Addition,
-            ),
-            1 => (
-                value + right_value as f64,
-                oxc::ast::ast::BinaryOperator::Subtraction,
-            ),
-            2 => (
-                (value as i32 ^ right_value) as f64,
-                oxc::ast::ast::BinaryOperator::BitwiseXOR,
-            ),
-            _ => unreachable!(),
-        };
-
-        self.ast_builder.expression_parenthesized(
+        if value.fract() != 0.0
+            || value < f64::from(i32::MIN)
+            || value > f64::from(i32::MAX)
+            || (value == 0.0 && value.is_sign_negative())
+        {
+            return None;
+        }
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::as_conversions,
+            reason = "range and integrality checked before conversion"
+        )]
+        let value = value as i32;
+        let ast = &self.context.ast;
+        let mask = self.context.rng.random_range(i32::MIN..=i32::MAX);
+        Some(Expression::new_binary_expression(
             literal.span,
-            self.ast_builder.expression_binary(
-                literal.span,
-                self.ast_builder.expression_numeric_literal(
-                    literal.span,
-                    left_value,
-                    None,
-                    literal.base,
-                ),
-                operator,
-                self.ast_builder.expression_numeric_literal(
-                    literal.span,
-                    right_value as f64,
-                    None,
-                    literal.base,
-                ),
-            ),
-        )
+            number(ast, literal.span, value ^ mask),
+            BinaryOperator::BitwiseXOR,
+            number(ast, literal.span, mask),
+            ast,
+        ))
     }
 }
 
-impl<'a> VisitMut<'a> for NumericObfuscation<'a> {
-    fn visit_expression(&mut self, expr: &mut Expression<'a>) {
-        match expr {
-            Expression::NumericLiteral(literal) => {
-                *expr = self.generate_equivalent_expression(literal);
-                return;
-            }
-            _ => {}
+impl<'a> VisitMut<'a> for Numeric<'_, 'a> {
+    fn visit_property_key(&mut self, key: &mut PropertyKey<'a>) {
+        if !matches!(key, PropertyKey::NumericLiteral(_)) {
+            walk_mut::walk_property_key(self, key);
         }
+    }
 
-        walk_expression(self, expr);
+    fn visit_expression(&mut self, expression: &mut Expression<'a>) {
+        if let Expression::NumericLiteral(literal) = expression {
+            if let Some(masked) = self.mask(literal) {
+                *expression = masked;
+            }
+        } else {
+            walk_mut::walk_expression(self, expression);
+        }
     }
 }

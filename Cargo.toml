@@ -2,8 +2,81 @@
 name = "hide-my-js"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.96"
+
+[features]
+default = ["cli"]
+cli = ["dep:clap"]
+
+[[bin]]
+name = "hide-my-js"
+path = "src/main.rs"
+required-features = ["cli"]
 
 [dependencies]
-oxc = { version = "0.48.1", features = ["full"] }
+clap = { version = "4.6.6", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "suggestions"], optional = true }
+oxc = { version = "0.148.0", features = ["ast_visit", "codegen", "semantic"] }
 rand = "0.9.0"
-base64 = "0.22.1"
+
+[lints.rust]
+future_incompatible = { level = "deny", priority = -1 }
+nonstandard_style = { level = "deny", priority = -1 }
+rust_2018_idioms = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+missing_debug_implementations = "deny"
+missing_docs = "deny"
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+unreachable_pub = "deny"
+unused_crate_dependencies = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+allow_attributes_without_reason = "deny"
+as_conversions = "deny"
+assertions_on_result_states = "deny"
+clone_on_ref_ptr = "deny"
+dbg_macro = "deny"
+default_union_representation = "deny"
+empty_drop = "deny"
+empty_structs_with_brackets = "deny"
+error_impl_error = "deny"
+exhaustive_enums = "warn"
+exhaustive_structs = "warn"
+expect_used = "deny"
+exit = "deny"
+filetype_is_file = "deny"
+get_unwrap = "deny"
+host_endian_bytes = "deny"
+indexing_slicing = "deny"
+let_underscore_must_use = "deny"
+let_underscore_untyped = "deny"
+lossy_float_literal = "deny"
+map_err_ignore = "deny"
+mem_forget = "deny"
+missing_assert_message = "deny"
+missing_docs_in_private_items = "deny"
+multiple_inherent_impl = "warn"
+multiple_unsafe_ops_per_block = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+partial_pub_fields = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+rc_buffer = "deny"
+rc_mutex = "deny"
+ref_patterns = "deny"
+same_name_method = "deny"
+string_add = "deny"
+string_slice = "deny"
+todo = "deny"
+undocumented_unsafe_blocks = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+unwrap_in_result = "deny"
+unwrap_used = "deny"
+unused_result_ok = "deny"
+use_debug = "deny"
+wildcard_enum_match_arm = "deny"

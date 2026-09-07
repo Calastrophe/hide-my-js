@@ -1,739 +1,358 @@
-use core::panic;
+use std::collections::HashSet;
 
-use oxc::allocator::{Box, CloneIn};
-use oxc::ast::ast::BigintBase;
-use oxc::ast::ast::Expression;
-use oxc::ast::ast::Statement;
-use oxc::ast::ast::{
-    AssignmentOperator, BlockStatement, BreakStatement, ExpressionStatement, ForStatementInit,
-    FunctionBody, IdentifierReference, IfStatement, SwitchCase, TSTypeAnnotation,
-    VariableDeclarationKind, WhileStatement,
+use oxc::{
+    allocator::ArenaVec,
+    ast::ast::{
+        ArrowFunctionExpression, BlockStatement, Expression, Function, FunctionBody, Statement,
+        StringLiteral, SwitchCase,
+    },
+    ast_visit::{walk, walk_mut, Visit, VisitMut},
+    semantic::{ScopeFlags, Scoping},
+    span::{GetSpan, SPAN},
+    str::Ident,
 };
-use oxc::ast::{AstBuilder, VisitMut};
-use oxc::span::{Atom, Span};
-use rand::distr::Alphanumeric;
-use rand::seq::SliceRandom;
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 
-use crate::utils;
+use super::{
+    cfg::{Graph, Terminator},
+    number, Context,
+};
+use crate::{Options, SkipReason};
 
-struct OuterLoop<'a> {
-    ast_builder: &'a AstBuilder<'a>,
-    condition: oxc::allocator::Box<'a, IdentifierReference<'a>>,
-    state_id: oxc::allocator::Box<'a, IdentifierReference<'a>>,
-    exit_case_nums: Option<(i32, i32)>,
-    initial_case_num: i32,
+/// A block's immutable decoding context: `left ^ right == identity`.
+#[derive(Clone, Copy)]
+pub(super) struct State<'a> {
+    /// First generated state binding.
+    pub(super) left: Ident<'a>,
+    /// Second generated state binding.
+    pub(super) right: Ident<'a>,
+    /// Unique logical block identity.
+    pub(super) identity: i32,
+    /// Right-hand value; left-hand value is identity XOR mask.
+    mask: i32,
 }
 
-impl<'a> OuterLoop<'a> {
-    pub fn new(
-        ast_builder: &'a AstBuilder<'a>,
-        condition: oxc::allocator::Box<'a, IdentifierReference<'a>>,
-        state_id: oxc::allocator::Box<'a, IdentifierReference<'a>>,
-        exit_case_nums: Option<(i32, i32)>,
-        initial_case_num: i32,
+impl State<'_> {
+    /// Expression yielding the block identity at every execution of this block.
+    pub(super) fn invariant(self) -> String {
+        format!("({}^{})", self.left, self.right)
+    }
+
+    /// Both assignments consume old state and establish the destination's pair.
+    fn transition(self, next: Self) -> String {
+        format!(
+            "{}={}^{};{}={}^{};",
+            self.left,
+            self.invariant(),
+            self.identity ^ next.identity ^ next.mask,
+            self.right,
+            self.right,
+            self.mask ^ next.mask
+        )
+    }
+}
+
+/// Lower eligible local regions while retaining structured scope boundaries.
+pub(super) struct ControlFlow<'ctx, 'a> {
+    /// Run state and arena.
+    context: &'ctx mut Context<'a>,
+    /// Original semantic binding information.
+    scoping: &'ctx Scoping,
+    /// Coverage and dispatcher size settings.
+    options: &'ctx Options,
+    /// True only while visiting an ordinary synchronous function.
+    eligible_function: bool,
+}
+
+impl<'ctx, 'a> ControlFlow<'ctx, 'a> {
+    /// Borrow configuration and original semantics for this pass.
+    pub(super) const fn new(
+        context: &'ctx mut Context<'a>,
+        scoping: &'ctx Scoping,
+        options: &'ctx Options,
     ) -> Self {
         Self {
-            ast_builder,
-            condition,
-            state_id,
-            exit_case_nums,
-            initial_case_num,
+            context,
+            scoping,
+            options,
+            eligible_function: false,
         }
     }
-}
 
-impl<'a> Clone for OuterLoop<'a> {
-    fn clone(&self) -> Self {
-        Self {
-            ast_builder: self.ast_builder,
-            condition: self.condition.clone_in(&self.ast_builder.allocator),
-            state_id: self.state_id.clone_in(&self.ast_builder.allocator),
-            exit_case_nums: self.exit_case_nums,
-            initial_case_num: self.initial_case_num,
-        }
-    }
-}
-
-pub struct ControlFlowFlattener<'a> {
-    ast_builder: &'a AstBuilder<'a>,
-}
-
-impl<'a> ControlFlowFlattener<'a> {
-    pub fn new(ast_builder: &'a AstBuilder<'a>) -> Self {
-        Self { ast_builder }
-    }
-
-    fn generate_case_number(&self) -> i32 {
-        let mut rng = rand::rng();
-        return rng.gen_range(std::i32::MIN..=std::i32::MAX);
-    }
-
-    fn create_initial_loop_case(
-        &self,
-        span: Span,
-        case_number: i32,
-        state_var: oxc::allocator::Box<'a, IdentifierReference<'a>>,
-        new_condition: Box<'a, IdentifierReference<'a>>,
-        real_condition: Expression<'a>,
-    ) -> (i32, i32, SwitchCase<'a>) {
-        let next_case_number = self.generate_case_number();
-
-        let goto_next_case_assignment = utils::create_assignment_expression(
-            self.ast_builder,
-            span,
-            state_var.name,
-            AssignmentOperator::Assign,
-            Expression::BigIntLiteral(utils::create_big_int_literal(
-                self.ast_builder,
-                span,
-                next_case_number,
-                BigintBase::Decimal,
-            )),
-        );
-        let end_loop_assignment = utils::create_assignment_expression(
-            self.ast_builder,
-            span,
-            new_condition.name,
-            AssignmentOperator::Assign,
-            Expression::BigIntLiteral(utils::create_big_int_literal(
-                self.ast_builder,
-                span,
-                0,
-                BigintBase::Decimal,
-            )),
-        );
-
-        let goto_next_statement =
-            Statement::ExpressionStatement(self.ast_builder.alloc_expression_statement(
-                span,
-                Expression::AssignmentExpression(goto_next_case_assignment),
-            ));
-        let end_loop_statement =
-            Statement::ExpressionStatement(self.ast_builder.alloc_expression_statement(
-                span,
-                Expression::AssignmentExpression(end_loop_assignment),
-            ));
-
-        let break_statement = self.ast_builder.alloc_break_statement(span, None);
-
-        let if_statement = self.ast_builder.alloc_if_statement(
-            span,
-            real_condition,
-            goto_next_statement,
-            Some(end_loop_statement),
-        );
-
-        let initial_case_literal =
-            utils::create_big_int_literal(self.ast_builder, span, case_number, BigintBase::Decimal);
-        let initial_case = self.ast_builder.switch_case(
-            span,
-            Some(Expression::BigIntLiteral(initial_case_literal)),
-            self.ast_builder.vec_from_array([
-                Statement::IfStatement(if_statement),
-                Statement::BreakStatement(break_statement),
-            ]),
-        );
-
-        // return case_number, next_case_number, case
-        (case_number, next_case_number, initial_case)
-    }
-
-    fn create_break_loop_case(
-        &self,
-        span: Span,
-        case_number: i32,
-        inner_loop: OuterLoop<'a>,
-        outer_loop: Option<OuterLoop<'a>>,
-    ) -> SwitchCase<'a> {
-        let case_number_literal =
-            utils::create_big_int_literal(self.ast_builder, span, case_number, BigintBase::Decimal);
-
-        let mut case_statements = self.ast_builder.vec();
-
-        let zero_number_literal =
-            utils::create_big_int_literal(self.ast_builder, span, 0, BigintBase::Decimal);
-
-        let inner_cond_assignment_expression = utils::create_assignment_expression(
-            self.ast_builder,
-            span,
-            inner_loop.condition.name,
-            AssignmentOperator::Assign,
-            Expression::BigIntLiteral(zero_number_literal.clone_in(&self.ast_builder.allocator)),
-        );
-        let inner_cond_assignment_statement =
-            Statement::ExpressionStatement(self.ast_builder.alloc_expression_statement(
-                span,
-                Expression::AssignmentExpression(inner_cond_assignment_expression),
-            ));
-
-        case_statements.push(inner_cond_assignment_statement);
-
-        if let Some(outer_loop) = outer_loop {
-            if let Some((break_case_num, _)) = outer_loop.exit_case_nums {
-                let initial_case_literal = utils::create_big_int_literal(
-                    self.ast_builder,
-                    span,
-                    break_case_num,
-                    BigintBase::Decimal,
-                );
-
-                let outer_cond_assignment_expression = utils::create_assignment_expression(
-                    self.ast_builder,
-                    span,
-                    outer_loop.state_id.name,
-                    AssignmentOperator::Assign,
-                    Expression::BigIntLiteral(initial_case_literal),
-                );
-                let outer_cond_assignment_statement =
-                    Statement::ExpressionStatement(self.ast_builder.alloc_expression_statement(
-                        span,
-                        Expression::AssignmentExpression(outer_cond_assignment_expression),
-                    ));
-
-                case_statements.push(outer_cond_assignment_statement);
-            } else {
-                let outer_cond_assignment_expression = utils::create_assignment_expression(
-                    self.ast_builder,
-                    span,
-                    outer_loop.condition.name,
-                    AssignmentOperator::Assign,
-                    Expression::BigIntLiteral(zero_number_literal),
-                );
-                let outer_cond_assignment_statement =
-                    Statement::ExpressionStatement(self.ast_builder.alloc_expression_statement(
-                        span,
-                        Expression::AssignmentExpression(outer_cond_assignment_expression),
-                    ));
-
-                case_statements.push(outer_cond_assignment_statement);
+    /// Randomize identities and layouts, keeping all state local to this invocation.
+    fn emit(&mut self, graph: Graph<'a>) -> Statement<'a> {
+        let left = self.context.fresh_name();
+        let right = self.context.fresh_name();
+        let mut used = HashSet::new();
+        let states: Vec<_> = graph
+            .blocks
+            .iter()
+            .map(|_| {
+                let mut identity = self.context.rng.random::<i32>();
+                while !used.insert(identity) {
+                    identity = self.context.rng.random();
+                }
+                State {
+                    left,
+                    right,
+                    identity,
+                    mask: self.context.rng.random(),
+                }
+            })
+            .collect();
+        // Every graph has an exit and a valid entry; zip below preserves that index relation.
+        let Some(initial) = states.get(graph.entry).copied() else {
+            return Statement::new_empty_statement(SPAN, &self.context.ast);
+        };
+        let Some(exit) = states.first().copied() else {
+            return Statement::new_empty_statement(SPAN, &self.context.ast);
+        };
+        let mut cases = ArenaVec::new_in(&self.context.ast);
+        self.context.report.flattened_regions += 1;
+        self.context.report.basic_blocks += graph.blocks.len();
+        for (block, state) in graph.blocks.into_iter().zip(states.iter().copied()) {
+            if let Some(case) = self.emit_case(block, state, &states) {
+                cases.push(case);
             }
         }
-
-        case_statements.push(Statement::BreakStatement(
-            self.ast_builder.alloc_break_statement(span, None),
-        ));
-
-        self.ast_builder.switch_case(
-            span,
-            Some(Expression::BigIntLiteral(case_number_literal)),
-            case_statements,
-        )
-    }
-
-    fn create_continue_loop_case(
-        &self,
-        span: Span,
-        case_number: i32,
-        inner_loop: OuterLoop<'a>,
-        outer_loop: Option<OuterLoop<'a>>,
-    ) -> SwitchCase<'a> {
-        let case_number_literal =
-            utils::create_big_int_literal(self.ast_builder, span, case_number, BigintBase::Decimal);
-
-        let mut case_statements = self.ast_builder.vec();
-
-        let zero_number_literal =
-            utils::create_big_int_literal(self.ast_builder, span, 0, BigintBase::Decimal);
-
-        let inner_cond_assignment_expression = utils::create_assignment_expression(
-            self.ast_builder,
-            span,
-            inner_loop.condition.name,
-            AssignmentOperator::Assign,
-            Expression::BigIntLiteral(zero_number_literal),
+        cases.shuffle(&mut self.context.rng);
+        let declarations = format!(
+            "let {left}={}, {right}={};",
+            initial.identity ^ initial.mask,
+            initial.mask
         );
-        let inner_cond_assignment_statement =
-            Statement::ExpressionStatement(self.ast_builder.alloc_expression_statement(
-                span,
-                Expression::AssignmentExpression(inner_cond_assignment_expression),
-            ));
-
-        case_statements.push(inner_cond_assignment_statement);
-
-        if let Some(outer_loop) = outer_loop {
-            if let Some((_, continue_case_num)) = outer_loop.exit_case_nums {
-                let initial_case_literal = utils::create_big_int_literal(
-                    self.ast_builder,
-                    span,
-                    continue_case_num,
-                    BigintBase::Decimal,
-                );
-
-                let outer_cond_assignment_expression = utils::create_assignment_expression(
-                    self.ast_builder,
-                    span,
-                    outer_loop.state_id.name,
-                    AssignmentOperator::Assign,
-                    Expression::BigIntLiteral(initial_case_literal),
-                );
-                let outer_cond_assignment_statement =
-                    Statement::ExpressionStatement(self.ast_builder.alloc_expression_statement(
-                        span,
-                        Expression::AssignmentExpression(outer_cond_assignment_expression),
-                    ));
-
-                case_statements.push(outer_cond_assignment_statement);
-            } else {
-                let initial_case_literal = utils::create_big_int_literal(
-                    self.ast_builder,
-                    span,
-                    outer_loop.initial_case_num,
-                    BigintBase::Decimal,
-                );
-
-                let outer_cond_assignment_expression = utils::create_assignment_expression(
-                    self.ast_builder,
-                    span,
-                    outer_loop.state_id.name,
-                    AssignmentOperator::Assign,
-                    Expression::BigIntLiteral(initial_case_literal),
-                );
-                let outer_cond_assignment_statement =
-                    Statement::ExpressionStatement(self.ast_builder.alloc_expression_statement(
-                        span,
-                        Expression::AssignmentExpression(outer_cond_assignment_expression),
-                    ));
-
-                case_statements.push(outer_cond_assignment_statement);
-            }
-        }
-
-        case_statements.push(Statement::BreakStatement(
-            self.ast_builder.alloc_break_statement(span, None),
-        ));
-
-        self.ast_builder.switch_case(
-            span,
-            Some(Expression::BigIntLiteral(case_number_literal)),
-            case_statements,
-        )
+        let mut body = self.context.statements(&declarations);
+        let test = self
+            .context
+            .expression(&format!("{}!=={}", initial.invariant(), exit.identity));
+        let discriminant = self.context.expression(&initial.invariant());
+        let switch = Statement::new_switch_statement(SPAN, discriminant, cases, &self.context.ast);
+        let loop_ = if self.context.rng.random::<bool>() {
+            Statement::new_while_statement(SPAN, test, switch, &self.context.ast)
+        } else {
+            Statement::new_for_statement(SPAN, None, Some(test), None, switch, &self.context.ast)
+        };
+        body.push(loop_);
+        Statement::new_block_statement(SPAN, body, &self.context.ast)
     }
 
-    fn flatten_statement(
+    /// Attach original string ownership and emit a block's explicit transfer.
+    fn emit_case(
         &mut self,
-        span: Span,
-        statement: &mut Statement<'a>,
-        outer_loop: Option<OuterLoop<'a>>,
+        mut block: super::cfg::Block<'a>,
+        state: State<'a>,
+        states: &[State<'a>],
+    ) -> Option<SwitchCase<'a>> {
+        // Record original literal ownership before constructing generated AST.
+        let mut owner = StringOwner {
+            context: self.context,
+            state,
+        };
+        owner.visit_statements(&block.statements);
+        match &block.terminator {
+            Terminator::Branch(test, _, _) | Terminator::Throw(test) => {
+                owner.visit_expression(test);
+            }
+            Terminator::Return(Some(value)) => owner.visit_expression(value),
+            Terminator::Jump(_) | Terminator::Return(None) | Terminator::Exit => {}
+        }
+        match block.terminator {
+            Terminator::Jump(next) => {
+                if let Some(next) = states.get(next) {
+                    block
+                        .statements
+                        .extend(self.context.statements(&state.transition(*next)));
+                }
+            }
+            Terminator::Branch(test, yes, no) => {
+                if let (Some(yes), Some(no)) = (states.get(yes), states.get(no)) {
+                    let consequent = self.context.statements(&state.transition(*yes));
+                    let alternate = self.context.statements(&state.transition(*no));
+                    block.statements.push(Statement::new_if_statement(
+                        SPAN,
+                        test,
+                        Statement::new_block_statement(SPAN, consequent, &self.context.ast),
+                        Some(Statement::new_block_statement(
+                            SPAN,
+                            alternate,
+                            &self.context.ast,
+                        )),
+                        &self.context.ast,
+                    ));
+                }
+            }
+            Terminator::Return(value) => block.statements.push(Statement::new_return_statement(
+                SPAN,
+                value,
+                &self.context.ast,
+            )),
+            Terminator::Throw(value) => block.statements.push(Statement::new_throw_statement(
+                SPAN,
+                value,
+                &self.context.ast,
+            )),
+            Terminator::Exit => return None,
+        }
+        block.statements.push(Statement::new_break_statement(
+            SPAN,
+            None,
+            &self.context.ast,
+        ));
+        Some(SwitchCase::new(
+            SPAN,
+            Some(number(&self.context.ast, SPAN, state.identity)),
+            block.statements,
+            &self.context.ast,
+        ))
+    }
+
+    /// Emit one selected run, leaving tiny and coverage-excluded runs intact.
+    fn flush(
+        &mut self,
+        run: &mut ArenaVec<'a, Statement<'a>>,
+        output: &mut ArenaVec<'a, Statement<'a>>,
     ) {
-        match statement {
-            Statement::BreakStatement(break_stmnt) => {
-                if let Some(outer_loop) = outer_loop {
-                    if let Some((break_case_num, _)) = outer_loop.exit_case_nums {
-                        let mut block_statements = self.ast_builder.vec();
-
-                        // set outer loop state to break case
-                        let goto_break_assign_expr = utils::create_assignment_expression(
-                            self.ast_builder,
-                            span,
-                            outer_loop.state_id.name,
-                            AssignmentOperator::Assign,
-                            Expression::BigIntLiteral(utils::create_big_int_literal(
-                                self.ast_builder,
-                                span,
-                                break_case_num,
-                                BigintBase::Decimal,
-                            )),
-                        );
-                        let goto_break_assign_stmnt = Statement::ExpressionStatement(
-                            self.ast_builder.alloc_expression_statement(
-                                span,
-                                Expression::AssignmentExpression(goto_break_assign_expr),
-                            ),
-                        );
-
-                        block_statements.push(goto_break_assign_stmnt);
-                        block_statements.push(Statement::BreakStatement(
-                            break_stmnt.clone_in(&self.ast_builder.allocator),
-                        ));
-
-                        *statement = Statement::BlockStatement(
-                            self.ast_builder
-                                .alloc_block_statement(break_stmnt.span, block_statements),
-                        );
+        if run.is_empty() {
+            return;
+        }
+        let graph = Graph::build(
+            run,
+            self.context,
+            self.scoping,
+            self.options.max_dispatcher_blocks,
+        );
+        match graph {
+            Ok(graph) if graph.blocks.len() >= 3 => {
+                if self.context.rng.random_range(0..100u8)
+                    < self.options.control_flow_coverage.min(100)
+                {
+                    output.push(self.emit(graph));
+                    run.clear();
+                } else {
+                    if let Some(first) = run.first() {
+                        self.context.skip(first.span(), SkipReason::Coverage);
                     }
+                    output.append(run);
                 }
             }
-            Statement::ContinueStatement(continue_stmnt) => {
-                if let Some(outer_loop) = outer_loop {
-                    if let Some((_, continue_case_num)) = outer_loop.exit_case_nums {
-                        let mut block_statements = self.ast_builder.vec();
+            Ok(_) => output.append(run),
+            Err(reason) => {
+                if let Some(first) = run.first() {
+                    self.context.skip(first.span(), reason);
+                }
+                output.append(run);
+            }
+        }
+    }
 
-                        // set outer loop state to break case
-                        let goto_continue_assign_expr = utils::create_assignment_expression(
-                            self.ast_builder,
-                            span,
-                            outer_loop.state_id.name,
-                            AssignmentOperator::Assign,
-                            Expression::BigIntLiteral(utils::create_big_int_literal(
-                                self.ast_builder,
-                                span,
-                                continue_case_num,
-                                BigintBase::Decimal,
-                            )),
-                        );
-                        let goto_continue_assign_stmnt = Statement::ExpressionStatement(
-                            self.ast_builder.alloc_expression_statement(
-                                span,
-                                Expression::AssignmentExpression(goto_continue_assign_expr),
-                            ),
-                        );
-
-                        block_statements.push(goto_continue_assign_stmnt);
-                        block_statements.push(Statement::BreakStatement(
-                            self.ast_builder
-                                .alloc_break_statement(continue_stmnt.span, None),
-                        ));
-
-                        *statement = Statement::BlockStatement(
-                            self.ast_builder
-                                .alloc_block_statement(continue_stmnt.span, block_statements),
-                        );
+    /// Partition on lexical scopes, unsupported statements, external transfers and size.
+    fn flatten_statements(&mut self, statements: &mut ArenaVec<'a, Statement<'a>>) {
+        let original = std::mem::replace(statements, ArenaVec::new_in(&self.context.ast));
+        let mut run = ArenaVec::new_in(&self.context.ast);
+        let mut blocks = 1;
+        for mut statement in original {
+            match Graph::build(
+                std::slice::from_ref(&statement),
+                self.context,
+                self.scoping,
+                self.options.max_dispatcher_blocks,
+            ) {
+                Ok(graph) => {
+                    let count = graph.blocks.len() - 1;
+                    if blocks + count > self.options.max_dispatcher_blocks {
+                        self.flush(&mut run, statements);
+                        blocks = 1;
                     }
+                    NestedFunctions { flow: self }.visit_statement(&mut statement);
+                    run.push(statement);
+                    blocks += count;
+                }
+                Err(reason) => {
+                    self.flush(&mut run, statements);
+                    blocks = 1;
+                    self.context.skip(statement.span(), reason);
+                    // Keep the boundary, but still visit safe regions within it.
+                    walk_mut::walk_statement(self, &mut statement);
+                    statements.push(statement);
                 }
             }
-            Statement::IfStatement(if_stmnt) => {
-                let span = if_stmnt.span;
+        }
+        self.flush(&mut run, statements);
+    }
+}
 
-                self.flatten_statement(span, &mut if_stmnt.consequent, outer_loop.clone());
+impl<'a> VisitMut<'a> for ControlFlow<'_, 'a> {
+    fn visit_function(&mut self, function: &mut Function<'a>, flags: ScopeFlags) {
+        let previous = self.eligible_function;
+        self.eligible_function = !function.r#async && !function.generator;
+        if !self.eligible_function {
+            self.context.skip(function.span, SkipReason::Suspension);
+        }
+        walk_mut::walk_function(self, function, flags);
+        self.eligible_function = previous;
+    }
 
-                if let Some(alternate) = &mut if_stmnt.alternate {
-                    self.flatten_statement(span, alternate, outer_loop.clone());
-                }
-            }
-            Statement::WhileStatement(while_stmnt) => {
-                let original_test = while_stmnt.test.clone_in(&self.ast_builder.allocator);
-                let (new_test_var, new_test_id) = utils::create_var_i32(
-                    self.ast_builder,
-                    VariableDeclarationKind::Let,
-                    while_stmnt.span,
-                    1,
-                );
+    fn visit_arrow_function_expression(&mut self, arrow: &mut ArrowFunctionExpression<'a>) {
+        let previous = self.eligible_function;
+        self.eligible_function = !arrow.r#async;
+        if arrow.r#async {
+            self.context.skip(arrow.span, SkipReason::Suspension);
+        }
+        walk_mut::walk_arrow_function_expression(self, arrow);
+        self.eligible_function = previous;
+    }
 
-                // lets create a block that wraps everything first so we can put the new_var = original_var outside it
+    fn visit_function_body(&mut self, body: &mut FunctionBody<'a>) {
+        if self.eligible_function {
+            self.flatten_statements(&mut body.statements);
+        } else {
+            walk_mut::walk_function_body(self, body);
+        }
+    }
 
-                let mut block_statements = self.ast_builder.vec();
-
-                block_statements.push(Statement::VariableDeclaration(new_test_var));
-
-                // create initial case and create an outer_loop object for it
-
-                let initial_case_number = self.generate_case_number();
-
-                let (state_var, state_var_id) = utils::create_var_i32(
-                    self.ast_builder,
-                    VariableDeclarationKind::Let,
-                    while_stmnt.span,
-                    initial_case_number,
-                );
-
-                let (initial_case_number, cur_case_number, initial_case) = self
-                    .create_initial_loop_case(
-                        while_stmnt.span,
-                        initial_case_number,
-                        state_var_id.clone_in(&self.ast_builder.allocator),
-                        new_test_id.clone_in(&self.ast_builder.allocator),
-                        original_test,
-                    );
-
-                block_statements.push(Statement::VariableDeclaration(state_var));
-
-                let outer_loop = OuterLoop::new(
-                    self.ast_builder,
-                    new_test_id.clone_in(&self.ast_builder.allocator),
-                    state_var_id.clone_in(&self.ast_builder.allocator),
-                    None,
-                    initial_case_number,
-                );
-
-                // then flatten the body and put it in the next case. when flattening body be sure to pass the Some(outer_loop) object
-                self.flatten_statement(
-                    while_stmnt.span,
-                    &mut while_stmnt.body,
-                    Some(outer_loop.clone()),
-                );
-
-                let mut body_case_statements = self.ast_builder.vec();
-
-                body_case_statements.push(while_stmnt.body.clone_in(&self.ast_builder.allocator));
-
-                let goto_initial_assign_expr = utils::create_assignment_expression(
-                    self.ast_builder,
-                    while_stmnt.span,
-                    state_var_id.name,
-                    AssignmentOperator::Assign,
-                    Expression::BigIntLiteral(utils::create_big_int_literal(
-                        self.ast_builder,
-                        while_stmnt.span,
-                        initial_case_number,
-                        BigintBase::Decimal,
-                    )),
-                );
-                let goto_initial_assign_stmnt =
-                    Statement::ExpressionStatement(self.ast_builder.alloc_expression_statement(
-                        span,
-                        Expression::AssignmentExpression(goto_initial_assign_expr),
-                    ));
-
-                let if_continue_stmnt =
-                    Statement::IfStatement(self.ast_builder.alloc_if_statement(
-                        span,
-                        Expression::Identifier(new_test_id.clone_in(&self.ast_builder.allocator)),
-                        goto_initial_assign_stmnt,
-                        None,
-                    ));
-
-                body_case_statements.push(if_continue_stmnt);
-
-                body_case_statements.push(Statement::BreakStatement(
-                    self.ast_builder
-                        .alloc_break_statement(while_stmnt.span, None),
-                ));
-
-                let body_case = self.ast_builder.switch_case(
-                    while_stmnt.span,
-                    Some(Expression::BigIntLiteral(utils::create_big_int_literal(
-                        self.ast_builder,
-                        while_stmnt.span,
-                        cur_case_number,
-                        BigintBase::Decimal,
-                    ))),
-                    body_case_statements,
-                );
-
-                let mut cases = self.ast_builder.vec_from_array([initial_case, body_case]);
-
-                cases.shuffle(&mut rand::rng());
-
-                let switch_statement = self.ast_builder.alloc_switch_statement(
-                    while_stmnt.span,
-                    Expression::Identifier(state_var_id),
-                    cases,
-                );
-
-                let new_while = self.ast_builder.alloc_while_statement(
-                    while_stmnt.span,
-                    Expression::Identifier(new_test_id),
-                    Statement::SwitchStatement(switch_statement),
-                );
-
-                block_statements.push(Statement::WhileStatement(new_while));
-
-                *statement = Statement::BlockStatement(
-                    self.ast_builder
-                        .alloc_block_statement(span, block_statements),
-                );
-            }
-            Statement::BlockStatement(block) => {
-                // for each statement first attempt to flatten it and then just put the flattened statement in a case!
-                let span = block.span;
-
-                let (cond_var, cond_var_id) =
-                    utils::create_var_i32(self.ast_builder, VariableDeclarationKind::Let, span, 1);
-
-                let mut cur_case_num = self.generate_case_number();
-
-                let break_case_num = self.generate_case_number();
-                let continue_case_num = self.generate_case_number();
-
-                let (state_var, state_var_id) = utils::create_var_i32(
-                    self.ast_builder,
-                    VariableDeclarationKind::Let,
-                    span,
-                    cur_case_num,
-                );
-
-                let inner_loop = OuterLoop::new(
-                    self.ast_builder,
-                    cond_var_id.clone_in(&self.ast_builder.allocator),
-                    state_var_id.clone_in(&self.ast_builder.allocator),
-                    Some((break_case_num, continue_case_num)),
-                    cur_case_num,
-                );
-
-                let break_case = self.create_break_loop_case(
-                    span,
-                    break_case_num,
-                    inner_loop.clone(),
-                    outer_loop.clone(),
-                );
-                let contiue_case = self.create_continue_loop_case(
-                    span,
-                    continue_case_num,
-                    inner_loop.clone(),
-                    outer_loop.clone(),
-                );
-
-                let mut block_statements = self.ast_builder.vec();
-                let mut switch_cases = self.ast_builder.vec();
-
-                switch_cases.push(break_case);
-                switch_cases.push(contiue_case);
-
-                block_statements.push(Statement::VariableDeclaration(cond_var));
-                block_statements.push(Statement::VariableDeclaration(state_var));
-
-                let mut stmnt_idx = 0;
-                let total_stmnts = block.body.len();
-
-                for statement in &mut block.body {
-                    // first attempt to flatten before creating case for statement
-                    self.flatten_statement(span, statement, Some(inner_loop.clone()));
-
-                    if let Statement::VariableDeclaration(var_decl) = statement {
-                        block_statements.push(Statement::VariableDeclaration(
-                            var_decl.clone_in(&self.ast_builder.allocator),
-                        ));
-                        stmnt_idx += 1;
-                        continue;
-                    }
-
-                    // create case
-                    let real_case_number = cur_case_num;
-                    let case_number_literal = utils::create_big_int_literal(
-                        self.ast_builder,
-                        span,
-                        cur_case_num,
-                        BigintBase::Decimal,
-                    );
-
-                    cur_case_num = self.generate_case_number();
-
-                    let mut case_statements = self.ast_builder.vec();
-
-                    case_statements.push(statement.clone_in(&self.ast_builder.allocator));
-
-                    let break_statement = Statement::BreakStatement(
-                        self.ast_builder.alloc_break_statement(span, None),
-                    );
-
-                    let assign_statement;
-
-                    if stmnt_idx == total_stmnts - 1 {
-                        let break_inner_loop_assin = utils::create_assignment_expression(
-                            self.ast_builder,
-                            span,
-                            cond_var_id.clone_in(&self.ast_builder.allocator).name,
-                            AssignmentOperator::Assign,
-                            Expression::BigIntLiteral(utils::create_big_int_literal(
-                                self.ast_builder,
-                                span,
-                                0,
-                                BigintBase::Decimal,
-                            )),
-                        );
-                        let break_inner_loop_stmnt = Statement::ExpressionStatement(
-                            self.ast_builder.alloc_expression_statement(
-                                span,
-                                Expression::AssignmentExpression(break_inner_loop_assin),
-                            ),
-                        );
-
-                        assign_statement = break_inner_loop_stmnt;
-                    } else {
-                        let goto_next_assign_expr = utils::create_assignment_expression(
-                            self.ast_builder,
-                            span,
-                            state_var_id.clone_in(&self.ast_builder.allocator).name,
-                            AssignmentOperator::Assign,
-                            Expression::BigIntLiteral(utils::create_big_int_literal(
-                                self.ast_builder,
-                                span,
-                                cur_case_num,
-                                BigintBase::Decimal,
-                            )),
-                        );
-                        let goto_next_assign_stmnt = Statement::ExpressionStatement(
-                            self.ast_builder.alloc_expression_statement(
-                                span,
-                                Expression::AssignmentExpression(goto_next_assign_expr),
-                            ),
-                        );
-
-                        assign_statement = goto_next_assign_stmnt;
-                    }
-
-                    let (assign_check_expr_var, assign_check_expr_id) = utils::create_var_i32(
-                        self.ast_builder,
-                        VariableDeclarationKind::Let,
-                        span,
-                        real_case_number,
-                    );
-                    let assign_check_expr_init = utils::create_assignment_expression(
-                        self.ast_builder,
-                        span,
-                        assign_check_expr_id.name,
-                        AssignmentOperator::BitwiseXOR,
-                        Expression::Identifier(state_var_id.clone_in(&self.ast_builder.allocator)),
-                    );
-
-                    let check_expr = self.ast_builder.alloc_expression_statement(
-                        span,
-                        Expression::AssignmentExpression(assign_check_expr_init),
-                    );
-
-                    case_statements.push(Statement::VariableDeclaration(assign_check_expr_var));
-                    case_statements.push(Statement::ExpressionStatement(check_expr));
-
-                    let if_stmnt = Statement::IfStatement(self.ast_builder.alloc_if_statement(
-                        span,
-                        Expression::Identifier(assign_check_expr_id),
-                        Statement::EmptyStatement(self.ast_builder.alloc_empty_statement(span)),
-                        Some(assign_statement),
-                    ));
-
-                    case_statements.push(if_stmnt);
-
-                    case_statements.push(break_statement);
-
-                    let switch_case = self.ast_builder.switch_case(
-                        span,
-                        Some(Expression::BigIntLiteral(case_number_literal)),
-                        case_statements,
-                    );
-
-                    switch_cases.push(switch_case);
-
-                    stmnt_idx += 1;
-                }
-
-                switch_cases.shuffle(&mut rand::rng());
-
-                let switch = self.ast_builder.alloc_switch_statement(
-                    span,
-                    Expression::Identifier(state_var_id),
-                    switch_cases,
-                );
-
-                let while_loop = self.ast_builder.alloc_while_statement(
-                    span,
-                    Expression::Identifier(cond_var_id),
-                    Statement::SwitchStatement(switch),
-                );
-
-                block_statements.push(Statement::WhileStatement(while_loop));
-
-                block.body = block_statements;
-            }
-            _ => {}
+    fn visit_block_statement(&mut self, block: &mut BlockStatement<'a>) {
+        if self.eligible_function {
+            self.flatten_statements(&mut block.body);
+        } else {
+            walk_mut::walk_block_statement(self, block);
         }
     }
 }
 
-impl<'a> VisitMut<'a> for ControlFlowFlattener<'a> {
-    fn visit_function_body(&mut self, it: &mut FunctionBody<'a>) {
-        let statements_copy = it.statements.clone_in(&self.ast_builder.allocator);
-        let mut new_block = Statement::BlockStatement(
-            self.ast_builder
-                .alloc_block_statement(it.span, statements_copy),
-        );
+/// Find nested functions without prematurely flattening the enclosing region.
+struct NestedFunctions<'flow, 'ctx, 'a> {
+    /// Delegate function boundaries to the main visitor.
+    flow: &'flow mut ControlFlow<'ctx, 'a>,
+}
 
-        self.flatten_statement(it.span, &mut new_block, None);
+impl<'a> VisitMut<'a> for NestedFunctions<'_, '_, 'a> {
+    fn visit_function(&mut self, function: &mut Function<'a>, flags: ScopeFlags) {
+        self.flow.visit_function(function, flags);
+    }
+    fn visit_arrow_function_expression(&mut self, arrow: &mut ArrowFunctionExpression<'a>) {
+        self.flow.visit_arrow_function_expression(arrow);
+    }
+}
 
-        if let Statement::BlockStatement(block) = new_block {
-            it.statements = self
-                .ast_builder
-                .vec_from_array([Statement::BlockStatement(block)]);
-        }
+/// Attribute only immediately evaluated literals to the current block.
+struct StringOwner<'ctx, 'a> {
+    /// Run metadata, carried directly to string planning.
+    context: &'ctx mut Context<'a>,
+    /// State guaranteed at block entry.
+    state: State<'a>,
+}
+
+impl<'a> Visit<'a> for StringOwner<'_, 'a> {
+    fn visit_string_literal(&mut self, literal: &StringLiteral<'a>) {
+        self.context
+            .string_contexts
+            .insert(literal.span, self.state);
+    }
+    fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
+    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
+    // Classes may defer instance fields; keep the entire class independent.
+    fn visit_class(&mut self, _: &oxc::ast::ast::Class<'a>) {}
+    fn visit_expression(&mut self, expression: &Expression<'a>) {
+        walk::walk_expression(self, expression);
     }
 }
